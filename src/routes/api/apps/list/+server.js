@@ -4,11 +4,17 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// Simple console logging for debugging
+function log(message, data = '') {
+	console.log(`[ANDROID-API] ${message}`, data);
+}
+
 /**
  * Get list of all installed apps from Android device via ADB
  * @returns {Promise<Response>} JSON response with app list
  */
 export async function GET() {
+	log('Starting app list retrieval for Samsung Fold 5');
 	try {
 		// Check if device is connected (using Samsung Fold 5 serial from migration plan)
 		const deviceSerial = 'RFCW708JTVX';

@@ -9,6 +9,7 @@ const execAsync = promisify(exec);
  * @returns {Promise<Response>} JSON response with connection status
  */
 export async function GET() {
+	console.log('[ADB-STATUS] Checking device connection...');
 	try {
 		// Check if ADB is available
 		const adbVersionCmd = 'adb version';
