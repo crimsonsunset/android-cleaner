@@ -28,24 +28,52 @@ export async function GET() {
 				return { serial: serial.trim(), status: status.trim() };
 			});
 		
-		// Check for Samsung Fold 5 specifically
-		const targetSerial = 'RFCW708JTVX';
-		const targetDevice = deviceLines.find(device => device.serial === targetSerial);
+		// Prefer Samsung Fold 5 if available, otherwise use first device
+		const samsungFold5 = 'RFCW708JTVX';
+		let targetDevice = deviceLines.find(device => device.serial === samsungFold5);
+		
+		if (!targetDevice && deviceLines.length > 0) {
+			// Fallback to first available device
+			targetDevice = deviceLines[0];
+		}
 		
 		// Get device info if connected
 		let deviceInfo = null;
 		if (targetDevice && targetDevice.status === 'device') {
 			try {
-				const modelCmd = `adb -s ${targetSerial} shell getprop ro.product.model`;
-				const versionCmd = `adb -s ${targetSerial} shell getprop ro.build.version.release`;
+				const propsCmd = `adb -s ${targetDevice.serial} shell "getprop ro.product.model && getprop ro.product.brand && getprop ro.product.name && getprop ro.product.marketname && getprop ro.build.version.release"`;
+				const { stdout: propsOutput } = await execAsync(propsCmd);
+				const [model, brand, productName, marketName, androidVersion] = propsOutput.trim().split('\n').map(line => line.trim());
 				
-				const { stdout: model } = await execAsync(modelCmd);
-				const { stdout: androidVersion } = await execAsync(versionCmd);
+				// Create human readable device name
+				let displayName = model;
+				
+				// Try marketname first (most user-friendly)
+				if (marketName && marketName !== '' && marketName !== 'unknown') {
+					displayName = marketName;
+				} else if (brand && brand.toLowerCase() === 'samsung') {
+					// Special handling for Samsung devices
+					if (model && model.includes('F946U')) {
+						displayName = 'Samsung Galaxy Z Fold5';
+					} else if (model && model.includes('F936U')) {
+						displayName = 'Samsung Galaxy Z Fold4';
+					} else if (model && model.includes('F926U')) {
+						displayName = 'Samsung Galaxy Z Fold3';
+					} else if (brand && productName) {
+						displayName = `${brand} ${productName}`;
+					}
+				} else if (brand && productName) {
+					displayName = `${brand} ${productName}`;
+				}
 				
 				deviceInfo = {
-					model: model.trim(),
-					androidVersion: androidVersion.trim(),
-					serial: targetSerial
+					model: model,
+					brand: brand,
+					productName: productName,
+					marketName: marketName,
+					displayName: displayName,
+					androidVersion: androidVersion,
+					serial: targetDevice.serial
 				};
 			} catch (error) {
 				console.warn('Could not get device info:', error.message);
@@ -55,8 +83,8 @@ export async function GET() {
 		return json({
 			success: true,
 			adbAvailable: true,
-			targetDevice: targetSerial,
-			deviceConnected: !!targetDevice,
+			targetDevice: targetDevice?.serial || 'none',
+			deviceConnected: !!targetDevice && targetDevice.status === 'device',
 			deviceStatus: targetDevice?.status || 'not found',
 			deviceInfo,
 			allDevices: deviceLines,

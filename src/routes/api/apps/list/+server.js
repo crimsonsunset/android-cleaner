@@ -13,11 +13,28 @@ function log(message, data = '') {
  * Get list of all installed apps from Android device via ADB
  * @returns {Promise<Response>} JSON response with app list
  */
-export async function GET() {
-	log('Starting app list retrieval for Samsung Fold 5');
+export async function GET({ url }) {
+	const isBasic = url.searchParams.get('basic') === 'true';
+	log(`Starting app list retrieval (basic: ${isBasic})`);
 	try {
-		// Check if device is connected (using Samsung Fold 5 serial from migration plan)
-		const deviceSerial = 'RFCW708JTVX';
+		// Get connected devices and prefer Samsung Fold 5
+		const devicesResult = await execAsync('adb devices');
+		const deviceLines = devicesResult.stdout.split('\n').filter(line => line.includes('\tdevice'));
+		
+		if (deviceLines.length === 0) {
+			return json({ success: false, error: 'No devices connected' });
+		}
+		
+		// Prefer Samsung Fold 5 if available, otherwise use first device
+		const samsungFold5 = 'RFCW708JTVX';
+		let deviceSerial = deviceLines.find(line => line.includes(samsungFold5))?.split('\t')[0];
+		
+		if (!deviceSerial) {
+			// Fallback to first available device
+			deviceSerial = deviceLines[0].split('\t')[0];
+		}
+		
+		log(`Using device: ${deviceSerial}`);
 		
 		// Get user-installed apps (non-system)
 		const userAppsCmd = `adb -s ${deviceSerial} shell pm list packages -3`;

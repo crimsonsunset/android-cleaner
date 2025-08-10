@@ -9,6 +9,18 @@
 	let selectedCategory = 'all';
 	let error = null;
 	
+	// Table sorting
+	let sortColumn = 'displayName';
+	let sortDirection = 'asc';
+	
+	// Loading progress
+	let loadingProgress = {
+		current: 0,
+		total: 0,
+		percentage: 0,
+		cached: 0
+	};
+	
 	// App categories for filtering
 	const categories = ['all', 'Social', 'Games', 'Entertainment', 'Finance', 'Productivity', 'Photo', 'Other'];
 	
@@ -33,33 +45,73 @@
 	}
 	
 	/**
-	 * Load app list from device
+	 * Load app list from device with real dumpsys data and progress tracking
 	 */
 	async function loadApps() {
 		if (!connectionStatus?.deviceConnected) {
-			error = 'Device not connected. Please connect Samsung Fold 5 via USB.';
+			error = `Device not connected. Please connect your ${connectionStatus?.deviceInfo?.model || 'Android device'} via USB.`;
 			return;
 		}
 		
 		loading = true;
 		error = null;
+		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0 };
 		
 		try {
-			const response = await fetch('/api/apps/list');
-			const data = await response.json();
+			// First get basic app list to show total count
+			const basicResponse = await fetch('/api/apps/list?basic=true');
+			const basicData = await basicResponse.json();
 			
-			if (data.success) {
-				apps = data.apps;
-				selectedApps.clear();
-				selectedApps = selectedApps; // Trigger reactivity
-			} else {
-				error = data.error || 'Failed to load apps';
+			if (!basicData.success) {
+				error = basicData.error || 'Failed to get app list';
+				return;
 			}
+			
+			const totalApps = basicData.apps.length;
+			loadingProgress.total = totalApps;
+			
+			// Now get detailed info for each app with progress updates
+			const detailedApps = [];
+			
+			for (let i = 0; i < basicData.apps.length; i++) {
+				const app = basicData.apps[i];
+				loadingProgress.current = i + 1;
+				loadingProgress.percentage = Math.round((loadingProgress.current / loadingProgress.total) * 100);
+				
+				try {
+					// Get detailed info for this specific app
+					const detailResponse = await fetch(`/api/apps/details?package=${encodeURIComponent(app.packageName)}`);
+					const detailData = await detailResponse.json();
+					
+					if (detailData.success) {
+						detailedApps.push(detailData.app);
+						if (detailData.cached) {
+							loadingProgress.cached++;
+						}
+					} else {
+						// Fallback to basic data if detailed fetch fails
+						detailedApps.push(app);
+					}
+				} catch (detailErr) {
+					console.warn(`Failed to get details for ${app.packageName}:`, detailErr);
+					// Use basic data as fallback
+					detailedApps.push(app);
+				}
+				
+				// Small delay to show progress and not overwhelm the device
+				await new Promise(resolve => setTimeout(resolve, 50));
+			}
+			
+			apps = detailedApps;
+			selectedApps.clear();
+			selectedApps = selectedApps; // Trigger reactivity
+			
 		} catch (err) {
 			error = 'Network error loading apps';
 			console.error('Load apps failed:', err);
 		} finally {
 			loading = false;
+			loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0 };
 		}
 	}
 	
@@ -120,14 +172,96 @@
 	}
 	
 	/**
-	 * Filter apps based on search and category
+	 * Sort apps by column
 	 */
-	$: filteredApps = apps.filter(app => {
-		const matchesSearch = app.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-		                     app.packageName.toLowerCase().includes(searchTerm.toLowerCase());
-		const matchesCategory = selectedCategory === 'all' || app.category === selectedCategory;
-		return matchesSearch && matchesCategory;
-	});
+	function sortBy(column) {
+		if (sortColumn === column) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortColumn = column;
+			sortDirection = 'asc';
+		}
+	}
+	
+	/**
+	 * Handle select all checkbox
+	 */
+	function handleSelectAll(event) {
+		if (event.target.checked) {
+			filteredApps.forEach(app => selectedApps.add(app.packageName));
+		} else {
+			selectedApps.clear();
+		}
+		selectedApps = selectedApps; // Trigger reactivity
+	}
+	
+	/**
+	 * Clear all selections
+	 */
+	function clearSelection() {
+		selectedApps.clear();
+		selectedApps = selectedApps;
+	}
+	
+	/**
+	 * Bulk uninstall selected apps
+	 */
+	async function bulkUninstall() {
+		if (selectedApps.size === 0) return;
+		
+		const confirmed = confirm(`Are you sure you want to uninstall ${selectedApps.size} apps?`);
+		if (!confirmed) return;
+		
+		await uninstallSelected();
+	}
+
+	/**
+	 * Clear app cache to force fresh data
+	 */
+	async function clearCache() {
+		try {
+			const response = await fetch('/api/cache/clear', { method: 'POST' });
+			const data = await response.json();
+			
+			if (data.success) {
+				alert('Cache cleared! Next load will fetch fresh data.');
+			} else {
+				error = data.error || 'Failed to clear cache';
+			}
+		} catch (err) {
+			error = 'Network error clearing cache';
+			console.error('Clear cache failed:', err);
+		}
+	}
+
+	/**
+	 * Filter and sort apps based on search, category, and sort settings
+	 */
+	$: filteredApps = apps
+		.filter(app => {
+			const matchesSearch = app.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+			                     app.packageName.toLowerCase().includes(searchTerm.toLowerCase());
+			const matchesCategory = selectedCategory === 'all' || app.category === selectedCategory;
+			return matchesSearch && matchesCategory;
+		})
+		.sort((a, b) => {
+			let aVal = a[sortColumn];
+			let bVal = b[sortColumn];
+			
+			// Handle string comparisons
+			if (typeof aVal === 'string') {
+				aVal = aVal.toLowerCase();
+				bVal = bVal.toLowerCase();
+			}
+			
+			const result = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+			return sortDirection === 'asc' ? result : -result;
+		});
+		
+	/**
+	 * Check if all visible apps are selected
+	 */
+	$: selectAll = filteredApps.length > 0 && filteredApps.every(app => selectedApps.has(app.packageName));
 	
 	/**
 	 * Get category counts for filter buttons
@@ -159,7 +293,7 @@
 					<div class="stat-value text-sm">
 						{connectionStatus?.deviceConnected ? '✅ Connected' : '❌ Disconnected'}
 					</div>
-					<div class="stat-desc">Samsung Fold 5</div>
+					<div class="stat-desc">{connectionStatus?.deviceInfo?.displayName || connectionStatus?.deviceInfo?.model || 'Unknown Device'}</div>
 				</div>
 				<div class="stat">
 					<div class="stat-title">Apps Loaded</div>
@@ -179,6 +313,19 @@
 	</div>
 
 	<div class="container mx-auto p-4">
+		<!-- Bulk Actions Bar -->
+		{#if selectedApps.size > 0}
+			<div class="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-base-100 shadow-xl border rounded-lg p-4 flex items-center gap-4 z-50">
+				<span class="text-sm font-medium">{selectedApps.size} apps selected</span>
+				<button class="btn btn-sm btn-error" on:click={bulkUninstall}>
+					🗑️ Uninstall Selected
+				</button>
+				<button class="btn btn-sm btn-ghost" on:click={clearSelection}>
+					Clear Selection
+				</button>
+			</div>
+		{/if}
+
 		<!-- Error Alert -->
 		{#if error}
 			<div class="alert alert-error mb-4">
@@ -231,6 +378,15 @@
 						</button>
 						
 						<button 
+							class="btn btn-ghost btn-sm"
+							disabled={loading}
+							on:click={clearCache}
+							title="Clear cache to force fresh data"
+						>
+							🗑️ Clear Cache
+						</button>
+						
+						<button 
 							class="btn btn-error"
 							disabled={selectedApps.size === 0 || loading}
 							on:click={uninstallSelected}
@@ -242,61 +398,126 @@
 			</div>
 		</div>
 
-		<!-- App Grid -->
-		{#if filteredApps.length > 0}
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-				{#each filteredApps as app}
-					<div class="card bg-base-100 shadow-md hover:shadow-lg transition-shadow">
-						<div class="card-body p-4">
-							<!-- Selection Checkbox -->
-							<div class="form-control">
-								<label class="label cursor-pointer">
-									<input 
-										type="checkbox" 
-										class="checkbox checkbox-primary"
-										checked={selectedApps.has(app.packageName)}
-										on:change={() => toggleAppSelection(app.packageName)}
-									/>
-									<span class="label-text font-semibold">{app.displayName}</span>
-								</label>
-							</div>
-							
-							<!-- App Details -->
-							<div class="space-y-2">
-								<div class="badge badge-outline badge-sm">{app.category}</div>
-								<p class="text-xs text-base-content/70 truncate" title={app.packageName}>
-									{app.packageName}
-								</p>
-								<div class="flex justify-between text-sm">
-									<span class="badge badge-info badge-sm">{app.size}</span>
-									<span class="text-base-content/60">{app.installDate}</span>
-								</div>
-							</div>
-							
-							<!-- Quick Actions -->
-							<div class="card-actions justify-end">
-								<button 
-									class="btn btn-error btn-xs"
-									on:click={() => {
-										selectedApps.clear();
-										selectedApps.add(app.packageName);
-										selectedApps = selectedApps;
-										uninstallSelected();
-									}}
-								>
-									🗑️
-								</button>
-							</div>
+		<!-- Apps Table -->
+		{#if loading}
+			<div class="overflow-x-auto">
+				<div class="flex flex-col gap-4 p-8 text-center">
+					<div class="flex items-center justify-center gap-4">
+						<span class="loading loading-spinner loading-lg text-primary"></span>
+						<div>
+							<p class="text-lg font-medium">Loading app details...</p>
+							<p class="text-sm text-base-content/70">
+								{loadingProgress.current} of {loadingProgress.total} apps processed
+								{#if loadingProgress.cached > 0}
+									<span class="text-green-600">({loadingProgress.cached} from cache)</span>
+								{/if}
+							</p>
+							<p class="text-xs text-base-content/60">
+								{#if loadingProgress.cached === loadingProgress.current}
+									Loaded from cache - nearly instant! 🚀
+								{:else}
+									Estimated time remaining: {Math.ceil((loadingProgress.total - loadingProgress.current) * 0.18)} seconds
+								{/if}
+							</p>
 						</div>
 					</div>
-				{/each}
+					<progress class="progress progress-primary w-full max-w-md mx-auto" 
+						value={loadingProgress.percentage} max="100"></progress>
+				</div>
 			</div>
-		{:else if apps.length === 0 && !loading}
+		{:else if filteredApps.length > 0}
+			<div class="overflow-x-auto">
+				<table class="table table-zebra table-hover">
+					<thead>
+						<tr>
+							<th>
+								<input type="checkbox" class="checkbox" 
+									bind:checked={selectAll} 
+									on:change={handleSelectAll} />
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('displayName')}>
+								App Name
+								{#if sortColumn === 'displayName'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('packageName')}>
+								Package Name
+								{#if sortColumn === 'packageName'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('type')}>
+								Type
+								{#if sortColumn === 'type'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('size')}>
+								Size
+								{#if sortColumn === 'size'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('installDate')}>
+								Install Date
+								{#if sortColumn === 'installDate'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('category')}>
+								Category
+								{#if sortColumn === 'category'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each filteredApps as app}
+							<tr class="hover">
+								<td>
+									<input type="checkbox" class="checkbox" 
+										checked={selectedApps.has(app.packageName)}
+										on:change={() => toggleAppSelection(app.packageName)} />
+								</td>
+								<td class="font-medium">{app.displayName}</td>
+								<td class="text-sm text-base-content/70 font-mono">{app.packageName}</td>
+								<td>
+									<div class="badge badge-{app.type === 'user' ? 'primary' : 'secondary'} badge-sm">
+										{app.type}
+									</div>
+								</td>
+								<td class="text-sm">{app.size}</td>
+								<td class="text-sm">{app.installDate}</td>
+								<td>
+									<div class="badge badge-outline badge-sm">{app.category}</div>
+								</td>
+								<td>
+									<button 
+										class="btn btn-xs btn-error"
+										on:click={() => {
+											selectedApps.clear();
+											selectedApps.add(app.packageName);
+											selectedApps = selectedApps;
+											uninstallSelected();
+										}}
+									>
+										🗑️
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else if apps.length === 0}
 			<div class="hero min-h-96">
 				<div class="hero-content text-center">
 					<div class="max-w-md">
 						<h2 class="text-3xl font-bold">📱 Ready to Clean</h2>
-						<p class="py-6">Connect your Samsung Fold 5 via USB and load your app inventory to start cleaning.</p>
+						<p class="py-6">Connect your Android device via USB and load your app inventory to start cleaning.</p>
 						<button 
 							class="btn btn-primary btn-lg"
 							disabled={!connectionStatus?.deviceConnected}
@@ -305,13 +526,6 @@
 							{connectionStatus?.deviceConnected ? '📱 Load Apps' : '🔌 Connect Device'}
 						</button>
 					</div>
-				</div>
-			</div>
-		{:else if loading}
-			<div class="hero min-h-96">
-				<div class="hero-content text-center">
-					<div class="loading loading-spinner loading-lg"></div>
-					<p class="ml-4">Loading apps from device...</p>
 				</div>
 			</div>
 		{:else}

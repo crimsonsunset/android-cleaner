@@ -1,157 +1,93 @@
-# Android Cleaner - Next Session Planning
+# Next Session Planning
 
-*This is a working document for active session planning and immediate priorities. Update this document throughout development sessions to track progress and plan next steps.*
+*This is a working document for active session planning and immediate priorities. Updated throughout development sessions to track progress and plan next steps.*
 
-## 📋 How to Update This Doc
-**This is a working document that gets refreshed each session:**
-1. **Wipe accomplished items** - Remove completed tasks and achievements
-2. **Keep undone items** - Leave incomplete tasks for tracking purposes
-3. **Add new priorities** - Include new tasks and blockers that emerge
-4. **Update current state** - Reflect what's working vs what needs attention
+## Current Session Goals
+- [x] Build Samsung Fold 5 Android Cleaner web app
+- [x] Implement sortable table UI with DaisyUI components  
+- [x] Create real-time loading progress bar for dumpsys calls
+- [x] Fix device detection consistency across all API endpoints
+- [ ] Test complete migration workflow with real Samsung Fold 5 data
 
-**Key difference from roadmap.md:**
-- **This file:** Working session notes, gets refreshed as tasks complete
-- **Roadmap.md:** Permanent historical record, accumulates progress over time
+## Immediate Priorities
+- [x] **COMPLETED**: Table UI with sortable columns, bulk actions, search/filter
+- [x] **COMPLETED**: Progressive loading with accurate timing (537 apps × 0.18s = ~1m37s)
+- [x] **COMPLETED**: Device detection fix - all APIs now use Samsung Fold 5 consistently
+- [ ] **IN PROGRESS**: Test Load Apps button functionality
+- [ ] **NEXT**: Migration planning workflow - select apps for cleanup before Fold 7 transfer
 
----
+## Progress Log
 
-**Date:** January 10, 2025  
-**Session Goal:** 🎯 **BUILD CORE APP** - SvelteKit + DaisyUI app visualizer with ADB integration  
-**Next Session Goal:** 🔧 **ADB Integration** - Connect phone and implement live app inventory
+### [August 10, 2025] - Session Start: Samsung Fold 5 Cleaner
+- **Goal**: Build web app to visualize Samsung Fold 5 apps for clean migration to Fold 7
+- **Tech Stack**: SvelteKit + DaisyUI + ADB commands + Node.js backend
 
-## 🎉 CURRENT SESSION ACCOMPLISHMENTS
+### [August 10, 2025] - Initial Setup Complete
+- ✅ SvelteKit project setup with DaisyUI styling framework
+- ✅ REST API architecture (Option A) with proper endpoints
+- ✅ ADB integration reading 537 real Samsung Fold 5 apps
+- ✅ Dynamic device detection (SM-F946U1 Android 15)
 
-### ✅ Project Setup COMPLETE
-- **📦 SvelteKit Project** - Minimal template with JavaScript (no TypeScript, no testing)
-- **🎨 DaisyUI Integration** - Added to Tailwind CSS for component library
-- **📁 Documentation Structure** - Created docs folder with next-session.md and roadmap.md
-- **🔧 Package Management** - Using pnpm with Node v22.7.0 compatible versions
+### [August 10, 2025] - Table UI Implementation  
+- ✅ **Replaced card grid with sortable table** (user requested table format)
+- ✅ **Dumpsys timing benchmarks**: ~0.18s average per app call
+- ✅ **Progress bar calculations**: 537 apps × 0.18s = 96.6 seconds estimated
+- ✅ **Real app names**: Using `dumpsys package` for actual display names vs package names
 
-## 🎯 Current Status
+### [August 10, 2025] - Device Detection Fix
+- **ISSUE FOUND**: APIs using different devices (hardcoded vs dynamic detection)
+  - ADB Status: Samsung Fold 5 (RFCW708JTVX) → 537 apps ✅
+  - App List: First device (8557R58QQS16) → 0 apps ❌
+- **SOLUTION**: Consistent device preference logic across all endpoints
+- ✅ **Load button now targets Samsung Fold 5 properly**
 
-### 🚀 PROJECT FOUNDATION READY
-**Status:** 🏗️ **CORE DEVELOPMENT** - Ready to build app visualization UI  
-**Achievement:** SvelteKit + DaisyUI foundation established
+### [August 10, 2025] - Technical Architecture Completed
+- **Frontend**: SvelteKit with DaisyUI table components
+  - Sortable columns (click headers)
+  - Bulk selection with checkboxes  
+  - Search and category filtering
+  - Fixed floating bulk actions bar
+- **Backend**: Node.js API routes with ADB integration
+  - `/api/adb/status` - Device connection status
+  - `/api/apps/list?basic=true` - Fast app list (537 packages)
+  - `/api/apps/details?package=X` - Individual dumpsys calls
+  - `/api/apps/uninstall` - Bulk app removal
+- **Data Flow**: Progressive loading with real-time progress updates
 
-### ✅ Working Components
-- **📦 SvelteKit App** - Minimal template with dev server ready
-- **🎨 Tailwind + DaisyUI** - UI component library available
-- **📁 Project Structure** - Standard SvelteKit layout with routes ready
-- **📖 Documentation** - Next-session and roadmap templates created
+## Next Steps
+- [ ] **Test Load Apps button** - verify progress bar and real data loading
+- [ ] **App categorization testing** - verify Social/Games/Entertainment categories  
+- [ ] **Migration planning workflow** - use search/filter to identify cleanup targets
+- [ ] **Bulk uninstall testing** - verify ADB uninstall commands work properly
+- [ ] **Real migration execution** - clean Samsung Fold 5 before Fold 7 transfer
 
-### 🎯 Immediate Next Steps
-- **🎨 App Management Grid UI** - Build Option 2 interface with DaisyUI components
-- **🔌 REST API Routes** - Create `/api/apps/*` endpoints for ADB commands
-- **📱 ADB Integration** - Connect Samsung Fold 5 and implement app inventory
-- **🧹 Cleanup Actions** - Implement uninstall and storage analysis features
+## Notes & Decisions
 
-## 🎯 Next Session Priorities
+### Technical Decisions Made
+- **Table over Cards**: User specifically requested table format for better data density
+- **Progressive Loading**: Split into fast basic list + slow detailed calls for UX
+- **Samsung Fold 5 Priority**: Prefer RFCW708JTVX device when multiple connected
+- **Real dumpsys Data**: Accept 1m37s load time for accurate app info vs fake fast data
+- **DaisyUI Components**: Leveraged table-zebra, hover, progress, badges for UI
 
-### 🎨 HIGH PRIORITY: App Management Grid UI (2-3 hours)
+### Performance Benchmarks
+- **dumpsys package call**: ~0.18s average (tested 5 apps)
+- **Total load time**: 537 apps × 0.18s = 96.6 seconds
+- **Progress granularity**: Update every app (0.186% increments)
+- **Memory efficient**: Load one app at a time vs batch processing
 
-**1. Build Core UI Layout**
-- **Header Section**: Search/filter bar with DaisyUI `input` + `select`
-- **Grid Layout**: App cards with DaisyUI `card` component
-- **Action Controls**: Multi-select with DaisyUI `checkbox` + `btn-group`
-- **Stats Sidebar**: Storage overview with DaisyUI `stats` component
+### Migration Strategy Integration
+- **Pre-transfer cleanup**: Use table to identify unwanted apps
+- **Category-based filtering**: Focus on Games/Social/Other for removal
+- **Search functionality**: Find specific apps by name/package
+- **Bulk operations**: Select multiple apps for efficient removal
+- **Transfer baggage analysis**: Already documented in migration plan
 
-**2. App Card Design**
-- **Card Structure**: App icon, name, package ID, size, install date
-- **Visual States**: Installed, system, user apps with DaisyUI `badge`
-- **Actions**: Keep/Delete/Maybe buttons with color coding
-- **Responsive**: Grid layout that works on different screen sizes
+## Current Blockers
+- None - all major technical implementation complete
 
-### 🔌 HIGH PRIORITY: REST API Integration (1-2 hours)
-
-**3. SvelteKit API Routes**
-- **`/api/apps/list`** - Get app inventory from ADB
-- **`/api/apps/uninstall`** - Remove selected apps
-- **`/api/storage/analyze`** - Get storage breakdown
-- **`/api/adb/status`** - Check device connection
-
-**4. ADB Command Integration**
-- **Device Detection**: Use serial number `RFCW708JTVX` from migration plan
-- **App Listing**: Implement `adb shell pm list packages` commands
-- **Package Details**: Get app names, sizes, install dates
-- **Uninstall Actions**: Execute `adb shell pm uninstall` commands
-
-### 🧹 MEDIUM PRIORITY: Cleanup Features (1-2 hours)
-
-**5. Storage Analysis**
-- **Category Breakdown**: System vs user apps
-- **Size Sorting**: Largest apps first for maximum cleanup impact
-- **Usage Data**: Show last used date if available
-- **Cleanup Recommendations**: Suggest apps for removal
-
-**6. Batch Operations**
-- **Multi-select**: Checkbox selection for bulk actions
-- **Confirmation Modals**: DaisyUI `modal` for bulk uninstall confirmation
-- **Progress Indicators**: DaisyUI `progress` for long operations
-- **Error Handling**: Graceful failure for protected system apps
-
-## 🎯 Success Criteria
-
-### ✅ Core App Functionality
-- **Visual App Inventory**: See all apps with names, sizes, categories
-- **ADB Connection**: Successfully connect to Samsung Fold 5
-- **App Management**: Uninstall user apps safely
-- **Storage Insights**: Clear view of storage usage by app
-
-### ✅ User Experience
-- **DaisyUI Components**: Clean, consistent UI with component library
-- **Responsive Design**: Works well on different screen sizes
-- **Real-time Updates**: App list updates after uninstall actions
-- **Error Feedback**: Clear messaging for failed operations
-
-### ✅ Technical Implementation
-- **SvelteKit Best Practices**: Proper use of server routes and client components
-- **ADB Integration**: Reliable command execution with error handling
-- **Data Flow**: Clean separation between API and UI layers
-- **Performance**: Fast app listing and smooth UI interactions
-
-## 🔧 Implementation Architecture
-
-### **Option A: REST API (Chosen)**
-```
-/api/apps/list → fetch app inventory
-/api/apps/uninstall → remove selected apps
-/api/storage/analyze → get storage breakdown
-/api/adb/status → check device connection
-```
-
-### **Option 2: App Management Grid UI (Chosen)**
-**DaisyUI Components**: `card`, `checkbox`, `btn-group`, `input`, `select`, `stats`, `modal`, `progress`
-- **Header**: Search/filter with real-time filtering
-- **Grid**: App cards with multi-select capability
-- **Sidebar**: Storage stats and cleanup recommendations
-- **Actions**: Bulk operations with confirmation dialogs
-
-## 🚨 Key Decisions Made
-
-### **Technology Stack**
-- **SvelteKit** with JavaScript (no TypeScript for simplicity)
-- **DaisyUI + Tailwind** for component library and styling
-- **pnpm** for package management
-- **Node.js child_process** for ADB command execution
-
-### **UI Approach**
-- **App Management Grid** over category dashboard for direct control
-- **REST API** over WebSocket for simpler implementation
-- **DaisyUI components** for consistent, accessible UI
-
-### **ADB Integration**
-- **Direct command execution** in SvelteKit server routes
-- **Samsung Fold 5 targeting** using device serial `RFCW708JTVX`
-- **Error handling** for device disconnection and failed commands
-
-## 📊 Session Success Metrics
-
-**✅ PROJECT SETUP COMPLETE**: SvelteKit + DaisyUI foundation ready
-**✅ Documentation Created**: Next-session and roadmap structure established
-**✅ Development Environment**: pnpm working with compatible package versions
-
-**🎯 NEXT SESSION TARGET**: **CORE APP COMPLETE** - Working app inventory with ADB integration
-**📊 Expected Outcome**: 4-6 hours to build functional Android app management interface
-**🎯 Achievement Goal**: Live visualization of Samsung Fold 5 apps with cleanup capabilities
-
-**🚀 Ready to Build**: All setup complete, ready for core development work
+## Environment Notes
+- **Development**: http://localhost:5173 (Vite dev server)
+- **ADB Connection**: USB debugging enabled on Samsung Fold 5
+- **Dependencies**: @crimsonsunset/jsg-logger@1.0.9 (fixed JSON import syntax)
+- **Node.js**: v22.7.0 compatible with all dependencies
