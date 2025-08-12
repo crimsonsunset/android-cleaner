@@ -1,0 +1,25 @@
+{
+  "name": "android-cleaner",
+  "description": "SvelteKit web app for Android device management via ADB - batch processing, app analysis, bulk operations",
+  "topics": [
+    "android",
+    "adb",
+    "sveltekit",
+    "device-management",
+    "app-cleanup",
+    "android-apps",
+    "bulk-operations",
+    "javascript",
+    "svelte",
+    "nodejs",
+    "aapt",
+    "android-sdk",
+    "web-app",
+    "daisyui",
+    "tailwindcss"
+  ],
+  "website": "",
+  "visibility": "public",
+  "license": "private",
+  "language": "JavaScript"
+}

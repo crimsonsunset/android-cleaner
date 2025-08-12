@@ -1,12 +1,12 @@
 # 🤖 Android Cleaner
 
-**Professional Android Device Management Tool**
+**SvelteKit Web App for Android Device Management via ADB**
 
-A modern web application for managing Android apps via ADB with advanced batch processing, intelligent app analysis, and bulk operations.
+A functional web application for managing Android apps through ADB commands. Features batch processing, app metadata analysis, and bulk operations for device cleanup.
 
 ![App Screenshot](app-screenshot.jpeg)
 
-*Sortable table with real-time batch processing, advanced selection, and comprehensive app metadata*
+*Functional table interface with batch processing, selection tools, and app metadata*
 
 ## ✨ Features
 
@@ -15,23 +15,23 @@ A modern web application for managing Android apps via ADB with advanced batch p
 - **Comprehensive Metadata**: Install source, target SDK, last used dates, data usage, app flags
 - **Smart Device Detection**: Auto-detects Samsung Fold models and other devices with pretty names
 
-### 📊 **Professional UI/UX**
-- **Sortable Data Table**: Click any column header to sort (size, date, SDK version, etc.)
-- **Advanced Selection**: Shift-click range selection with smart trimming
-- **Real-time Progress**: Batch processing with live progress bars and time estimates
-- **Toast Notifications**: Feedback system
+### 📊 **Functional UI**
+- **Sortable Data Table**: Click column headers to sort by size, date, SDK version, etc.
+- **Range Selection**: Shift-click to select multiple apps at once
+- **Batch Progress**: Live progress tracking during app processing
+- **User Feedback**: Toast notifications for actions and errors
 
-### ⚡ **Performance & Reliability** 
-- **Controlled Batch Processing**: Processes 5 apps at a time to prevent system overload
-- **Immediate Stop Control**: Instant cancellation if needed
-- **Smart Caching**: Automatic cache updates when apps are uninstalled
-- **Error Management**: Comprehensive failure tracking and recovery
+### ⚡ **Performance Features** 
+- **Batch Processing**: Processes apps in groups of 5 to prevent system overload
+- **Stop Control**: Cancel batch operations in progress
+- **Caching**: File-based cache for faster subsequent loads
+- **Error Handling**: Tracks and displays failed operations
 
-### 🎯 **Power User Tools**
-- **Bulk Operations**: Select and uninstall multiple apps efficiently
-- **System App Protection**: Safety checks prevent accidental system app removal
-- **Multi-Device Support**: UI ready for multiple ADB devices
-- **Store Integration**: Click app names to open Play Store or Samsung Store pages
+### 🎯 **Additional Features**
+- **Bulk Operations**: Select and uninstall multiple apps at once
+- **System App Protection**: Basic safety checks to prevent removing system apps
+- **Device Detection**: Identifies connected Android devices with friendly names
+- **App Store Links**: Click app names to open store pages (where available)
 
 ## 🛠 System Requirements
 
@@ -41,14 +41,14 @@ A modern web application for managing Android apps via ADB with advanced batch p
 - **Chrome/Chromium**: For best app mode experience (auto-detected)
 
 ### **Supported Devices**
-- ✅ **Any Android device with ADB support**
-- ✅ **Samsung Galaxy series** (enhanced device detection)
-- ✅ **Multiple device management** (UI ready, backend coming soon)
+- ✅ **Android devices with ADB support**
+- ✅ **Samsung Galaxy series** (tested with Fold 5, enhanced detection)
+- 🔄 **Multiple device support** (UI implemented, backend switching in progress)
 
 ### **Operating Systems**
-- 🍎 **macOS**: Full support
-- 🪟 **Windows**: Full support  
-- 🐧 **Linux**: Full support
+- 🍎 **macOS**: Tested and working
+- 🪟 **Windows**: Should work (ADB path may need adjustment)  
+- 🐧 **Linux**: Should work (ADB path may need adjustment)
 
 ## 🚀 Quick Start
 
@@ -130,17 +130,16 @@ src/
 
 ## 📱 Use Cases
 
-**Android Device Management Made Easy**
+**Practical Android App Management**
 
-1. **Analysis**: Load all apps, review data usage, install sources, last used dates
-2. **Cleanup**: Bulk uninstall unwanted apps with advanced selection tools
-3. **Maintenance**: Regular device cleanup and app auditing
+1. **App Analysis**: View installed apps with metadata like install dates, sizes, and sources
+2. **Bulk Cleanup**: Remove multiple unwanted apps efficiently before device migration
+3. **Device Auditing**: Review what's installed and identify apps for removal
 
-**Perfect for**:
-- Device migrations and clean installs
-- App auditing and cleanup
-- Development device management
-- Android power users and enthusiasts
+**Useful for**:
+- Cleaning devices before migrations
+- App auditing and storage cleanup
+- Android development and testing workflows
 
 ## 🤝 Contributing
 
@@ -158,4 +157,4 @@ Built with ❤️ for Android power users. Contributions welcome!
 
 ---
 
-**🔥 Professional Android device management with advanced app intelligence!**
+**🔧 Functional Android device management via ADB with web interface**
