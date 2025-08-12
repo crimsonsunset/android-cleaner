@@ -10,11 +10,26 @@ const execAsync = promisify(exec);
  * @returns {Promise<string|null>} Real app name or null if extraction fails
  */
 async function extractRealAppName(packageName) {
-	const aaptPath = './tools/sdk/build-tools/34.0.0/aapt';
+	// Try multiple possible paths for AAPT binary
+	const possiblePaths = [
+		'./tools/sdk/build-tools/34.0.0/aapt',           // Development
+		'./macos/tools/sdk/build-tools/34.0.0/aapt',     // Compiled dist structure
+		'../tools/sdk/build-tools/34.0.0/aapt',          // Alternative relative path
+		'tools/sdk/build-tools/34.0.0/aapt'              // Without leading ./
+	];
+	
+	let aaptPath = null;
+	for (const path of possiblePaths) {
+		if (fs.existsSync(path)) {
+			aaptPath = path;
+			console.log(`[AAPT] Found AAPT binary at: ${path}`);
+			break;
+		}
+	}
 	
 	// Require AAPT - fail if not available
-	if (!fs.existsSync(aaptPath)) {
-		console.warn(`[AAPT] AAPT binary not found at ${aaptPath}. Run 'npm run setup-aapt' to install.`);
+	if (!aaptPath) {
+		console.warn(`[AAPT] AAPT binary not found in any of the expected locations: ${possiblePaths.join(', ')}`);
 		return null;
 	}
 	
