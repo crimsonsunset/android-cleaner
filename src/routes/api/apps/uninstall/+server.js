@@ -1,15 +1,15 @@
 import { json } from '@sveltejs/kit';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import Logger from '@crimsonsunset/jsg-logger';
 
 const execAsync = promisify(exec);
 
-// Initialize logger
-const logger = new Logger({
-	level: 'info',
-	component: 'android-uninstall-api'
-});
+// Simple logger replacement
+const logger = {
+	info: (msg) => console.log(`[UNINSTALL] ${msg}`),
+	error: (msg) => console.error(`[UNINSTALL] ${msg}`),
+	warn: (msg) => console.warn(`[UNINSTALL] ${msg}`)
+};
 
 /**
  * Uninstall selected apps from Android device via ADB
