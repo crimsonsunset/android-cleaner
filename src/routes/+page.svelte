@@ -29,6 +29,10 @@
 	let avgBatchTime = 0; // Average time per batch
 	let currentBatchController = null; // AbortController for current batch request
 	
+	// Pagination state
+	let pageSize = "50"; // Default to 50 apps per page (string to match option values)
+	let currentPage = 1;
+	
 	// Table sorting
 	let sortColumn = 'displayName';
 	let sortDirection = 'asc';
@@ -515,6 +519,7 @@
 				searchTerm = '';
 				hideSystemApps = true;
 				failedUninstalls = []; // Clear failed uninstalls history
+				currentPage = 1; // Reset pagination
 				
 				// Reset progress
 				loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0, estimatedSeconds: 0 };
@@ -636,12 +641,57 @@
 			const result = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
 			return sortDirection === 'asc' ? result : -result;
 		});
+	
+	/**
+	 * Calculate total pages and paginated apps
+	 */
+	$: totalPages = pageSize === 'all' ? 1 : Math.ceil(filteredApps.length / parseInt(pageSize));
+	
+	/**
+	 * Reset current page when filters change or page size changes
+	 */
+	$: if (filteredApps) {
+		currentPage = Math.min(currentPage, totalPages || 1);
+	}
+	
+	/**
+	 * Get apps for current page
+	 */
+	$: paginatedApps = pageSize === 'all' 
+		? filteredApps
+		: filteredApps.slice((currentPage - 1) * parseInt(pageSize), currentPage * parseInt(pageSize));
 		
 	/**
-	 * Check if all visible apps are selected
+	 * Check if all visible apps on current page are selected
 	 */
-	$: selectAll = filteredApps.length > 0 && filteredApps.every(app => selectedApps.has(app.packageName));
+	$: selectAll = paginatedApps.length > 0 && paginatedApps.every(app => selectedApps.has(app.packageName));
 	
+	/**
+	 * Pagination controls
+	 */
+	function goToPage(page) {
+		if (page >= 1 && page <= totalPages) {
+			currentPage = page;
+		}
+	}
+	
+	function previousPage() {
+		if (currentPage > 1) {
+			currentPage--;
+		}
+	}
+	
+	function nextPage() {
+		if (currentPage < totalPages) {
+			currentPage++;
+		}
+	}
+	
+	function changePageSize(newSize) {
+		pageSize = newSize; // Keep as string to match option values
+		currentPage = 1; // Reset to first page when changing page size
+	}
+
 	/**
 	 * Show toast notification
 	 */
@@ -805,6 +855,15 @@
 							/>
 						</label>
 					</div>
+					
+					<!-- Compact Page Size Selector -->
+					<select class="select select-sm select-bordered" 
+						value={pageSize} 
+						on:change={(e) => changePageSize(e.target.value)}>
+						<option value="50">50/page</option>
+						<option value="100">100/page</option>
+						<option value="all">All</option>
+					</select>
 				</div>
 			{/if}
 		</div>
@@ -1014,7 +1073,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each filteredApps as app}
+						{#each paginatedApps as app}
 							<tr class="hover cursor-pointer {app.packageName === shiftSelectAnchor ? 'ring-1 ring-primary/50' : ''}" 
 								on:click={(event) => handleRowClick(app.packageName, event)}>
 								<td>
@@ -1105,6 +1164,59 @@
 						{/each}
 					</tbody>
 				</table>
+				
+				<!-- Pagination Controls -->
+				{#if filteredApps.length > 0}
+					<div class="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4">
+						<!-- Page Size Selector -->
+						<div class="flex items-center gap-2">
+							<span class="text-sm">Show:</span>
+							<select class="select select-sm select-bordered" 
+								value={pageSize} 
+								on:change={(e) => changePageSize(e.target.value)}>
+								<option value="50">50 per page</option>
+								<option value="100">100 per page</option>
+								<option value="all">All ({filteredApps.length})</option>
+							</select>
+						</div>
+						
+						<!-- Page Info -->
+						<div class="text-sm text-base-content/70">
+							{#if pageSize === 'all'}
+								Showing all {filteredApps.length} apps
+							{:else}
+								Showing {Math.min((currentPage - 1) * parseInt(pageSize) + 1, filteredApps.length)}-{Math.min(currentPage * parseInt(pageSize), filteredApps.length)} of {filteredApps.length} apps
+							{/if}
+						</div>
+						
+						<!-- Page Navigation -->
+						{#if pageSize !== 'all' && totalPages > 1}
+							<div class="flex items-center gap-1">
+								<button class="btn btn-sm btn-ghost" 
+									disabled={currentPage === 1} 
+									on:click={previousPage}>
+									‹ Prev
+								</button>
+								
+								<!-- Page Numbers -->
+								<div class="flex gap-1 flex-wrap">
+									{#each Array.from({length: totalPages}, (_, i) => i + 1) as page}
+										<button class="btn btn-sm {page === currentPage ? 'btn-primary' : 'btn-ghost'}" 
+											on:click={() => goToPage(page)}>
+											{page}
+										</button>
+									{/each}
+								</div>
+								
+								<button class="btn btn-sm btn-ghost" 
+									disabled={currentPage === totalPages} 
+									on:click={nextPage}>
+									Next ›
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		{:else if apps.length === 0}
 			<div class="hero min-h-96">
