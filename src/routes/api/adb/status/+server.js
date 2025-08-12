@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { getSmartDeviceName } from '$lib/device-names.js';
 
 const execAsync = promisify(exec);
 
@@ -36,7 +37,7 @@ export async function GET() {
 				}
 				
 				try {
-					const propsCmd = `adb -s ${device.serial} shell "getprop ro.product.model && getprop ro.product.brand && getprop ro.product.name && getprop ro.product.marketname"`;
+					const propsCmd = `adb -s ${device.serial} shell "getprop ro.product.model && getprop ro.product.brand && getprop ro.product.name && getprop ro.product.marketname && getprop ro.product.manufacturer"`;
 					const { stdout: propsOutput } = await execAsync(propsCmd);
 					
 					// Check if getprop failed (some devices don't support it)
@@ -44,35 +45,10 @@ export async function GET() {
 						throw new Error('getprop not supported on this device');
 					}
 					
-					const [model, brand, productName, marketName] = propsOutput.trim().split('\n').map(line => line.trim());
+					const [model, brand, productName, marketName, manufacturer] = propsOutput.trim().split('\n').map(line => line.trim());
 					
-					// Create human readable device name
-					let displayName = model || device.serial;
-					
-					// Try marketname first (most user-friendly)
-					if (marketName && marketName !== '' && marketName !== 'unknown') {
-						displayName = marketName;
-					} else if (brand && brand.toLowerCase() === 'samsung') {
-						// Special handling for Samsung devices
-						if (model && model.includes('F946U')) {
-							displayName = 'Samsung Galaxy Z Fold5';
-						} else if (model && model.includes('F936U')) {
-							displayName = 'Samsung Galaxy Z Fold4';
-						} else if (model && model.includes('F926U')) {
-							displayName = 'Samsung Galaxy Z Fold3';
-						} else if (brand && productName) {
-							displayName = `${brand} ${productName}`;
-						}
-					} else if (brand && productName) {
-						displayName = `${brand} ${productName}`;
-					} else if (model && model.includes('Car_Thing')) {
-						displayName = 'Spotify Car Thing';
-					}
-					
-					// Handle special device patterns by serial
-					if (device.serial.startsWith('8557R58QQS16')) {
-						displayName = 'Spotify Car Thing';
-					}
+					// Use smart device name resolution
+					const displayName = await getSmartDeviceName(model, brand, marketName, manufacturer, device.serial);
 					
 					return {
 						...device,
@@ -80,18 +56,14 @@ export async function GET() {
 						model,
 						brand,
 						productName,
-						marketName
+						marketName,
+						manufacturer
 					};
 				} catch (error) {
 					console.warn(`Could not get device info for ${device.serial}:`, error.message);
 					
-					// Try to identify device by serial number patterns
-					let displayName = device.serial;
-					if (device.serial.startsWith('8557R58QQS16')) {
-						displayName = 'Spotify Car Thing';
-					} else if (device.serial.startsWith('RFCW708JTVX')) {
-						displayName = 'Samsung Galaxy Z Fold5';
-					}
+					// Fallback to smart device name with serial-based detection
+					const displayName = await getSmartDeviceName(null, null, null, null, device.serial);
 					
 					return { ...device, displayName };
 				}
@@ -119,6 +91,7 @@ export async function GET() {
 					brand: targetDevice.brand,
 					productName: targetDevice.productName,
 					marketName: targetDevice.marketName,
+					manufacturer: targetDevice.manufacturer,
 					displayName: targetDevice.displayName,
 					androidVersion: androidVersion.trim(),
 					serial: targetDevice.serial
