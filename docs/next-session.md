@@ -58,6 +58,58 @@
 - **Cache Performance**: 157KB file read once vs 206 HTTP requests
 - **Ready for Migration**: Accurate Samsung Fold 5 app inventory for Fold 7 transfer
 
+### [August 11, 2025] - Real App Names Investigation: APK Parser Analysis
+- **GOAL**: Replace `generateDisplayName` function with real app labels (e.g., "Spotify" not "Music")
+- **CURRENT METHOD**: Hardcoded lookup table + package name parsing - works but limited
+- **INVESTIGATION**: Tested "pure JavaScript" APK parsers for better distribution
+
+#### ❌ Pure JavaScript APK Parsers: Complete Failure
+- **`apk-parser@0.1.7`**: Claims "pure JS" but secretly requires AAPT binary
+  - Error: `spawn /.../apk-parser/tools/aapt ENOENT`
+  - **Reality**: Just a wrapper around AAPT, not pure JS
+- **`node-apk-parser-promise@1.0.3`**: Broken API, `extractInfo` function doesn't exist
+- **`js-apk-parser@0.0.3`**: Missing dependencies, incomplete package
+  - Error: `Cannot find module 'AndroidManifest'`
+
+#### 🎯 Root Problem: APK Parsing Requires AAPT
+- **APK files are binary**: Need specialized tools to extract AndroidManifest.xml
+- **Real solution**: Android Asset Packaging Tool (AAPT) from Android SDK
+- **Why devices don't have AAPT**: It's a developer tool (200MB+), not for end users
+- **Distribution issue**: Can't bundle AAPT due to size/licensing concerns
+
+#### ✅ Correct Solution: AAPT Download-on-Demand
+**Hybrid Architecture for Production Distribution:**
+1. **Default**: Enhanced `generateDisplayName` function (works everywhere)
+2. **Premium**: Auto-download AAPT for perfect accuracy (user choice)
+3. **Fallback**: Current hardcoded lookup + package parsing
+
+**Implementation Plan:**
+```javascript
+// Enhanced generateDisplayName function
+1. Try crowdsourced app name database (JSON file)
+2. Better package name parsing patterns  
+3. Manual override capability for power users
+4. Optional: Download AAPT for 100% accuracy
+
+// AAPT Download Strategy (macOS example)
+const aaptUrl = 'https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/8.1.0/aapt2-8.1.0-osx.jar';
+// Extract binary, use: aapt dump badging app.apk | grep application-label
+```
+
+#### 📦 Distribution Options Analyzed
+1. **Bundle AAPT binaries** (❌ 50-100MB download, licensing issues)
+2. **Pure JS parsers** (❌ All broken/incomplete as tested above)
+3. **Download-on-first-run** (⚠️ Requires internet, setup complexity)
+4. **Hybrid fallback** (✅ Always works + optional enhancement)
+5. **Enhanced current method** (✅ Zero deps, instant distribution)
+
+#### 🏆 Recommended: Enhanced Current Method
+- **Expand lookup table**: Add more known apps (500+ common packages)
+- **Smarter parsing**: Better package name → display name logic
+- **Crowdsourced database**: JSON file with community app names
+- **User overrides**: Let users manually correct app names
+- **Future**: Add AAPT download option for power users
+
 ### [August 10, 2025] - Technical Architecture Completed
 - **Frontend**: SvelteKit with DaisyUI table components
   - Sortable columns (click headers)
@@ -75,6 +127,9 @@
 - [x] **Load Apps functionality** - bulk loading with instant cache performance working
 - [x] **Data quality validation** - real dates (2023-09-10) and sizes (97M) extracted  
 - [x] **Performance optimization** - 206 HTTP calls → 1 bulk call completed
+- [x] **APK Parser Investigation** - tested and rejected "pure JS" parsers (all broken)
+- [ ] **Enhanced App Names** - implement better generateDisplayName function
+- [ ] **App Name Database** - create JSON lookup for 500+ common apps
 - [ ] **Fresh cache generation** - next Load Apps click will create corrected cache
 - [ ] **Migration planning workflow** - use accurate data to identify cleanup targets
 - [ ] **Real migration execution** - clean Samsung Fold 5 before Fold 7 transfer
@@ -87,6 +142,8 @@
 - **Samsung Fold 5 Priority**: Prefer RFCW708JTVX device when multiple connected
 - **Real dumpsys Data**: Accept 1m37s load time for accurate app info vs fake fast data
 - **DaisyUI Components**: Leveraged table-zebra, hover, progress, badges for UI
+- **APK Parser Rejection**: All "pure JS" parsers are broken/incomplete - stick with enhanced current method
+- **Distribution First**: Prioritize easy deployment over perfect accuracy - hybrid approach later
 
 ### Performance Benchmarks
 - **dumpsys package call**: ~0.18s average (tested 5 apps)
