@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { loadCache, saveCache, isCacheValid, initCache } from '$lib/cache.js';
 
 const execAsync = promisify(exec);
 
@@ -10,7 +11,7 @@ function log(message, data = '') {
 }
 
 /**
- * Get list of all installed apps from Android device via ADB
+ * Get list of all installed apps from Android device via ADB with smart caching
  * @returns {Promise<Response>} JSON response with app list
  */
 export async function GET({ url }) {
@@ -36,22 +37,34 @@ export async function GET({ url }) {
 		
 		log(`Using device: ${deviceSerial}`);
 		
+		// Load cache and check if we have valid bulk data
+		let cache = loadCache();
+		
+		if (isCacheValid(cache, deviceSerial) && Object.keys(cache.apps).length > 0) {
+			// Return cached data instantly - BULK LOAD FROM CACHE!
+			const cachedApps = Object.values(cache.apps);
+			log(`[BULK-CACHE] Returning ${cachedApps.length} apps from cache instantly`);
+			
+			return json({
+				success: true,
+				deviceSerial,
+				totalUserApps: cachedApps.filter(app => app.type === 'user').length,
+				totalSystemApps: cachedApps.filter(app => app.type === 'system').length,
+				apps: cachedApps,
+				cached: true,
+				timestamp: new Date().toISOString()
+			});
+		}
+		
+		// Cache miss or invalid - fetch fresh data from device
+		log(`[BULK-FRESH] Cache miss, fetching fresh data from device`);
+		
 		// Get user-installed apps (non-system)
 		const userAppsCmd = `adb -s ${deviceSerial} shell pm list packages -3`;
 		const { stdout: userApps } = await execAsync(userAppsCmd);
 		
-		// Get system apps for comparison
-		const systemAppsCmd = `adb -s ${deviceSerial} shell pm list packages -s`;
-		const { stdout: systemApps } = await execAsync(systemAppsCmd);
-		
 		// Parse app lists
 		const userAppsList = userApps
-			.split('\n')
-			.filter(line => line.startsWith('package:'))
-			.map(line => line.replace('package:', '').trim())
-			.filter(Boolean);
-			
-		const systemAppsList = systemApps
 			.split('\n')
 			.filter(line => line.startsWith('package:'))
 			.map(line => line.replace('package:', '').trim())
@@ -91,7 +104,9 @@ export async function GET({ url }) {
 						type: 'user',
 						size,
 						installDate,
-						category: getAppCategory(packageName)
+						category: getAppCategory(packageName),
+						detailsFetched: true,
+						cachedAt: Date.now()
 					};
 				} catch (error) {
 					return {
@@ -101,18 +116,28 @@ export async function GET({ url }) {
 						size: 'Unknown',
 						installDate: 'Unknown',
 						category: 'Other',
-						error: error.message
+						error: error.message,
+						detailsFetched: false,
+						cachedAt: Date.now()
 					};
 				}
 			})
 		);
 		
+		// Save to cache for future bulk loads
+		cache = initCache(deviceSerial);
+		appsWithDetails.forEach(app => {
+			cache.apps[app.packageName] = app;
+		});
+		saveCache(cache);
+		
 		return json({
 			success: true,
 			deviceSerial,
 			totalUserApps: userAppsList.length,
-			totalSystemApps: systemAppsList.length,
+			totalSystemApps: 0, // We only fetch user apps for this endpoint
 			apps: appsWithDetails,
+			cached: false,
 			timestamp: new Date().toISOString()
 		});
 		
@@ -120,7 +145,7 @@ export async function GET({ url }) {
 		return json({
 			success: false,
 			error: error.message,
-			deviceSerial: 'RFCW708JTVX',
+			deviceSerial: 'unknown',
 			apps: [],
 			timestamp: new Date().toISOString()
 		}, { status: 500 });

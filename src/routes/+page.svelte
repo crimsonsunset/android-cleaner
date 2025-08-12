@@ -55,7 +55,7 @@
 	}
 	
 	/**
-	 * Load app list from device with real dumpsys data and progress tracking
+	 * Load app list from device - uses bulk loading for instant cache performance
 	 */
 	async function loadApps() {
 		if (!connectionStatus?.deviceConnected) {
@@ -68,53 +68,26 @@
 		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0 };
 		
 		try {
-			// First get basic app list to show total count
-			const basicResponse = await fetch('/api/apps/list?basic=true');
-			const basicData = await basicResponse.json();
+			// Get complete app list with all details in one call
+			const response = await fetch('/api/apps/list');
+			const data = await response.json();
 			
-			if (!basicData.success) {
-				error = basicData.error || 'Failed to get app list';
+			if (!data.success) {
+				error = data.error || 'Failed to get app list';
 				return;
 			}
 			
-			const totalApps = basicData.apps.length;
-			loadingProgress.total = totalApps;
+			// Set progress to show we're processing
+			loadingProgress.total = data.apps.length;
+			loadingProgress.current = data.apps.length;
+			loadingProgress.percentage = 100;
 			
-			// Now get detailed info for each app with progress updates
-			const detailedApps = [];
-			
-			for (let i = 0; i < basicData.apps.length; i++) {
-				const app = basicData.apps[i];
-				loadingProgress.current = i + 1;
-				loadingProgress.percentage = Math.round((loadingProgress.current / loadingProgress.total) * 100);
-				
-				try {
-					// Get detailed info for this specific app
-					const detailResponse = await fetch(`/api/apps/details?package=${encodeURIComponent(app.packageName)}`);
-					const detailData = await detailResponse.json();
-					
-					if (detailData.success) {
-						detailedApps.push(detailData.app);
-						if (detailData.cached) {
-							loadingProgress.cached++;
-						}
-					} else {
-						// Fallback to basic data if detailed fetch fails
-						detailedApps.push(app);
-					}
-				} catch (detailErr) {
-					console.warn(`Failed to get details for ${app.packageName}:`, detailErr);
-					// Use basic data as fallback
-					detailedApps.push(app);
-				}
-				
-				// Small delay to show progress and not overwhelm the device
-				await new Promise(resolve => setTimeout(resolve, 50));
-			}
-			
-			apps = detailedApps;
+			// Use the complete app data directly (no individual API calls needed!)
+			apps = data.apps;
 			selectedApps.clear();
 			selectedApps = selectedApps; // Trigger reactivity
+			
+			console.log(`[BULK-LOAD] Loaded ${apps.length} apps instantly via bulk API`);
 			
 		} catch (err) {
 			error = 'Network error loading apps';
@@ -428,24 +401,16 @@
 					<div class="flex items-center justify-center gap-4">
 						<span class="loading loading-spinner loading-lg text-primary"></span>
 						<div>
-							<p class="text-lg font-medium">Loading app details...</p>
+							<p class="text-lg font-medium">Loading apps...</p>
 							<p class="text-sm text-base-content/70">
-								{loadingProgress.current} of {loadingProgress.total} apps processed
-								{#if loadingProgress.cached > 0}
-									<span class="text-green-600">({loadingProgress.cached} from cache)</span>
-								{/if}
+								Reading app data from Samsung Fold 5
 							</p>
 							<p class="text-xs text-base-content/60">
-								{#if loadingProgress.cached === loadingProgress.current}
-									Loaded from cache - nearly instant! 🚀
-								{:else}
-									Estimated time remaining: {Math.ceil((loadingProgress.total - loadingProgress.current) * 0.18)} seconds
-								{/if}
+								⚡ Using bulk loading for instant performance
 							</p>
 						</div>
 					</div>
-					<progress class="progress progress-primary w-full max-w-md mx-auto" 
-						value={loadingProgress.percentage} max="100"></progress>
+					<progress class="progress progress-primary w-full max-w-md mx-auto"></progress>
 				</div>
 			</div>
 		{:else if filteredApps.length > 0}
