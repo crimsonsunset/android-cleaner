@@ -12,7 +12,8 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",
-		"setup-aapt": "echo '🔧 Setting up AAPT...' && mkdir -p tools && cd tools && (test -d cmdline-tools || (echo '📥 Downloading Android SDK...' && curl -L 'https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip' -o android-cmdline-tools.zip && unzip -q android-cmdline-tools.zip && rm android-cmdline-tools.zip)) && echo '🔨 Installing build-tools (auto-accepting licenses)...' && yes | ./cmdline-tools/bin/sdkmanager --sdk_root=./sdk 'build-tools;34.0.0' && echo '✅ AAPT ready!' && ./sdk/build-tools/34.0.0/aapt version"
+		"setup-aapt": "node scripts/setup-aapt.js",
+		"postinstall": "node scripts/setup-aapt.js"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",

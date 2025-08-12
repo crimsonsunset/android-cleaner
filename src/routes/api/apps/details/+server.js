@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { generateDisplayName } from '$lib/app-names.js';
 import { loadCache, saveCache, isCacheValid, getCachedApp, setCachedApp, initCache } from '$lib/cache.js';
 
 const execAsync = promisify(exec);
@@ -156,7 +157,7 @@ async function getAppDetails(deviceSerial, packageName) {
 		}
 		
 		// Generate display name
-		const displayName = generateDisplayName(packageName);
+		const displayName = await generateDisplayName(packageName);
 		
 		return {
 			packageName,
@@ -177,7 +178,7 @@ async function getAppDetails(deviceSerial, packageName) {
 		// Return basic info if detailed fetch fails
 		return {
 			packageName,
-			displayName: generateDisplayName(packageName),
+			displayName: await generateDisplayName(packageName),
 			type: 'unknown',
 			size: 'Unknown',
 			installDate: 'Unknown',
@@ -189,48 +190,6 @@ async function getAppDetails(deviceSerial, packageName) {
 			detailsFetched: false
 		};
 	}
-}
-
-/**
- * Generate human-readable display name from package name
- * @param {string} packageName - Android package name
- * @returns {string} Display name
- */
-function generateDisplayName(packageName) {
-	// Known app mappings
-	const knownApps = {
-		'com.spotify.music': 'Spotify',
-		'com.facebook.katana': 'Facebook',
-		'com.instagram.android': 'Instagram',
-		'com.whatsapp': 'WhatsApp',
-		'com.google.android.youtube': 'YouTube',
-		'com.twitter.android': 'Twitter',
-		'com.samsung.android.messaging': 'Samsung Messages',
-		'com.samsung.android.contacts': 'Samsung Contacts',
-		'com.android.chrome': 'Chrome',
-		'com.google.android.gm': 'Gmail',
-		'com.samsung.android.gallery3d': 'Samsung Gallery',
-		'com.google.android.apps.photos': 'Google Photos',
-		'com.netflix.mediaclient': 'Netflix',
-		'com.amazon.mShop.android.shopping': 'Amazon Shopping',
-		'com.paypal.android.p2pmobile': 'PayPal',
-		'com.uber.app': 'Uber',
-		'com.lyft.android': 'Lyft',
-		'com.discord': 'Discord',
-		'com.slack': 'Slack',
-		'com.microsoft.teams': 'Microsoft Teams'
-	};
-	
-	if (knownApps[packageName]) {
-		return knownApps[packageName];
-	}
-	
-	// Extract meaningful name from package
-	const parts = packageName.split('.');
-	const lastPart = parts[parts.length - 1];
-	
-	// Capitalize and clean up
-	return lastPart.charAt(0).toUpperCase() + lastPart.slice(1).replace(/[_-]/g, ' ');
 }
 
 /**
