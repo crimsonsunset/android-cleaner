@@ -74,36 +74,67 @@ export async function GET({ url }) {
 		const appsWithDetails = await Promise.all(
 			userAppsList.map(async (packageName) => {
 				try {
-					// Get app info and size
-					const [infoCmd, sizeCmd] = [
-						`adb -s ${deviceSerial} shell dumpsys package ${packageName} | grep -E "(firstInstallTime|lastUpdateTime)"`,
-						`adb -s ${deviceSerial} shell du -sh /data/app/${packageName}* 2>/dev/null | head -1 || echo "0K"`
-					];
+					// Get full dumpsys output for this package
+					const dumpsysCmd = `adb -s ${deviceSerial} shell dumpsys package ${packageName}`;
+					const { stdout: dumpsysOutput } = await execAsync(dumpsysCmd);
 					
-					const [{ stdout: info }, { stdout: sizeInfo }] = await Promise.all([
-						execAsync(infoCmd).catch(() => ({ stdout: '' })),
-						execAsync(sizeCmd).catch(() => ({ stdout: '0K' }))
-					]);
+					// Parse dumpsys output for key information
+					const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=([^\n]+)/);
+					const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=([^\n]+)/);
+					const versionNameMatch = dumpsysOutput.match(/versionName=([^\s]+)/);
+					const versionCodeMatch = dumpsysOutput.match(/versionCode=(\d+)/);
+					const codePathMatch = dumpsysOutput.match(/codePath=([^\n]+)/);
 					
-					// Parse install date
-					const firstInstallMatch = info.match(/firstInstallTime=(.+)/);
-					const installDate = firstInstallMatch 
-						? new Date(parseInt(firstInstallMatch[1])).toISOString().split('T')[0]
-						: 'Unknown';
+					// Parse install date (handle both Unix timestamps and formatted dates)
+					let installDate = 'Unknown';
+					if (firstInstallMatch) {
+						const dateStr = firstInstallMatch[1].trim();
+						if (/^\d+$/.test(dateStr)) {
+							// Unix timestamp
+							installDate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+						} else {
+							// Formatted date (YYYY-MM-DD HH:MM:SS)
+							const parsed = new Date(dateStr);
+							installDate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : 'Unknown';
+						}
+					}
 					
-					// Parse size
-					const sizeMatch = sizeInfo.trim().split('\t')[0] || '0K';
-					const size = sizeMatch === '0K' ? 'Unknown' : sizeMatch;
+					let lastUpdate = installDate;
+					if (lastUpdateMatch) {
+						const dateStr = lastUpdateMatch[1].trim();
+						if (/^\d+$/.test(dateStr)) {
+							// Unix timestamp
+							lastUpdate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+						} else {
+							// Formatted date (YYYY-MM-DD HH:MM:SS)
+							const parsed = new Date(dateStr);
+							lastUpdate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : installDate;
+						}
+					}
 					
-					// Generate display name from package
-					const displayName = generateDisplayName(packageName);
+					// Get app size using the actual codePath
+					let size = 'Unknown';
+					if (codePathMatch) {
+						const codePath = codePathMatch[1].trim();
+						const sizeCmd = `adb -s ${deviceSerial} shell du -sh "${codePath}" 2>/dev/null | cut -f1`;
+						try {
+							const { stdout: sizeOutput } = await execAsync(sizeCmd);
+							const rawSize = sizeOutput.trim();
+							size = rawSize || 'Unknown';
+						} catch (sizeError) {
+							// Size calculation failed, keep as 'Unknown'
+						}
+					}
 					
 					return {
 						packageName,
-						displayName,
+						displayName: generateDisplayName(packageName),
 						type: 'user',
 						size,
 						installDate,
+						lastUpdate,
+						versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown',
+						versionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : 0,
 						category: getAppCategory(packageName),
 						detailsFetched: true,
 						cachedAt: Date.now()
@@ -115,6 +146,9 @@ export async function GET({ url }) {
 						type: 'user',
 						size: 'Unknown',
 						installDate: 'Unknown',
+						lastUpdate: 'Unknown',
+						versionName: 'Unknown',
+						versionCode: 0,
 						category: 'Other',
 						error: error.message,
 						detailsFetched: false,

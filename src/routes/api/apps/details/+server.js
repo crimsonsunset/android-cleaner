@@ -100,15 +100,25 @@ async function getAppDetails(deviceSerial, packageName) {
 		const { stdout: dumpsysOutput } = await execAsync(dumpsysCmd);
 		
 		// Parse dumpsys output for key information
-		const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=(\d+)/);
-		const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=(\d+)/);
+		const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=([^\n]+)/);
+		const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=([^\n]+)/);
 		const versionNameMatch = dumpsysOutput.match(/versionName=([^\s]+)/);
 		const versionCodeMatch = dumpsysOutput.match(/versionCode=(\d+)/);
+		const codePathMatch = dumpsysOutput.match(/codePath=([^\n]+)/);
 		
-		// Get app size
-		const sizeCmd = `adb -s ${deviceSerial} shell du -sh /data/app/${packageName}* 2>/dev/null | head -1 || echo "0K"`;
-		const { stdout: sizeOutput } = await execAsync(sizeCmd).catch(() => ({ stdout: '0K' }));
-		const size = sizeOutput.trim().split('\t')[0] || '0K';
+		// Get app size using the actual codePath
+		let size = 'Unknown';
+		if (codePathMatch) {
+			const codePath = codePathMatch[1].trim();
+			const sizeCmd = `adb -s ${deviceSerial} shell du -sh "${codePath}" 2>/dev/null | cut -f1`;
+			try {
+				const { stdout: sizeOutput } = await execAsync(sizeCmd);
+				const rawSize = sizeOutput.trim();
+				size = rawSize || 'Unknown';
+			} catch (sizeError) {
+				console.warn(`Failed to get size for ${packageName}:`, sizeError.message);
+			}
+		}
 		
 		// Try to get real app name from package manager
 		const nameCmd = `adb -s ${deviceSerial} shell pm list packages -f | grep ${packageName}`;
@@ -118,14 +128,32 @@ async function getAppDetails(deviceSerial, packageName) {
 		const userAppCmd = `adb -s ${deviceSerial} shell pm list packages -3 | grep ${packageName}`;
 		const isUserApp = await execAsync(userAppCmd).then(() => true).catch(() => false);
 		
-		// Parse install date
-		const installDate = firstInstallMatch 
-			? new Date(parseInt(firstInstallMatch[1])).toISOString().split('T')[0]
-			: 'Unknown';
-			
-		const lastUpdate = lastUpdateMatch
-			? new Date(parseInt(lastUpdateMatch[1])).toISOString().split('T')[0]
-			: installDate;
+		// Parse install date (handle both Unix timestamps and formatted dates)
+		let installDate = 'Unknown';
+		if (firstInstallMatch) {
+			const dateStr = firstInstallMatch[1].trim();
+			if (/^\d+$/.test(dateStr)) {
+				// Unix timestamp
+				installDate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+			} else {
+				// Formatted date (YYYY-MM-DD HH:MM:SS)
+				const parsed = new Date(dateStr);
+				installDate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : 'Unknown';
+			}
+		}
+		
+		let lastUpdate = installDate;
+		if (lastUpdateMatch) {
+			const dateStr = lastUpdateMatch[1].trim();
+			if (/^\d+$/.test(dateStr)) {
+				// Unix timestamp
+				lastUpdate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+			} else {
+				// Formatted date (YYYY-MM-DD HH:MM:SS)
+				const parsed = new Date(dateStr);
+				lastUpdate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : installDate;
+			}
+		}
 		
 		// Generate display name
 		const displayName = generateDisplayName(packageName);

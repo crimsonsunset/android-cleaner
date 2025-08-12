@@ -39,6 +39,7 @@
 		]
 	},
 	"dependencies": {
-		"@crimsonsunset/jsg-logger": "^1.0.9"
+		"@crimsonsunset/jsg-logger": "^1.0.9",
+		"apk-parser": "^0.1.7"
 	}
 }
