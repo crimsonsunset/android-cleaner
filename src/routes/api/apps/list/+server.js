@@ -71,93 +71,111 @@ export async function GET({ url }) {
 			.map(line => line.replace('package:', '').trim())
 			.filter(Boolean);
 		
-		// Get app details for user apps (real data)
-		const appsWithDetails = await Promise.all(
-			userAppsList.map(async (packageName) => {
-				try {
-					// Get full dumpsys output for this package
-					const dumpsysCmd = `adb -s ${deviceSerial} shell dumpsys package ${packageName}`;
-					const { stdout: dumpsysOutput } = await execAsync(dumpsysCmd);
-					
-					// Parse dumpsys output for key information
-					const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=([^\n]+)/);
-					const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=([^\n]+)/);
-					const versionNameMatch = dumpsysOutput.match(/versionName=([^\s]+)/);
-					const versionCodeMatch = dumpsysOutput.match(/versionCode=(\d+)/);
-					const codePathMatch = dumpsysOutput.match(/codePath=([^\n]+)/);
-					
-					// Parse install date (handle both Unix timestamps and formatted dates)
-					let installDate = 'Unknown';
-					if (firstInstallMatch) {
-						const dateStr = firstInstallMatch[1].trim();
-						if (/^\d+$/.test(dateStr)) {
-							// Unix timestamp
-							installDate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
-						} else {
-							// Formatted date (YYYY-MM-DD HH:MM:SS)
-							const parsed = new Date(dateStr);
-							installDate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : 'Unknown';
+		// Process apps in controlled batches to prevent system overload
+		const BATCH_SIZE = 5; // Process 5 apps at a time
+		const appsWithDetails = [];
+		
+		log(`[BATCH-PROCESS] Processing ${userAppsList.length} apps in batches of ${BATCH_SIZE}`);
+		
+		for (let i = 0; i < userAppsList.length; i += BATCH_SIZE) {
+			const batch = userAppsList.slice(i, i + BATCH_SIZE);
+			const batchStartTime = Date.now();
+			
+			log(`[BATCH-PROCESS] Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(userAppsList.length/BATCH_SIZE)} (${batch.length} apps)`);
+			
+			const batchResults = await Promise.all(
+				batch.map(async (packageName) => {
+					try {
+						// Get full dumpsys output for this package
+						const dumpsysCmd = `adb -s ${deviceSerial} shell dumpsys package ${packageName}`;
+						const { stdout: dumpsysOutput } = await execAsync(dumpsysCmd);
+						
+						// Parse dumpsys output for key information
+						const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=([^\n]+)/);
+						const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=([^\n]+)/);
+						const versionNameMatch = dumpsysOutput.match(/versionName=([^\s]+)/);
+						const versionCodeMatch = dumpsysOutput.match(/versionCode=(\d+)/);
+						const codePathMatch = dumpsysOutput.match(/codePath=([^\n]+)/);
+						
+						// Parse install date (handle both Unix timestamps and formatted dates)
+						let installDate = 'Unknown';
+						if (firstInstallMatch) {
+							const dateStr = firstInstallMatch[1].trim();
+							if (/^\d+$/.test(dateStr)) {
+								// Unix timestamp
+								installDate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+							} else {
+								// Formatted date (YYYY-MM-DD HH:MM:SS)
+								const parsed = new Date(dateStr);
+								installDate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : 'Unknown';
+							}
 						}
-					}
-					
-					let lastUpdate = installDate;
-					if (lastUpdateMatch) {
-						const dateStr = lastUpdateMatch[1].trim();
-						if (/^\d+$/.test(dateStr)) {
-							// Unix timestamp
-							lastUpdate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
-						} else {
-							// Formatted date (YYYY-MM-DD HH:MM:SS)
-							const parsed = new Date(dateStr);
-							lastUpdate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : installDate;
+						
+						let lastUpdate = installDate;
+						if (lastUpdateMatch) {
+							const dateStr = lastUpdateMatch[1].trim();
+							if (/^\d+$/.test(dateStr)) {
+								// Unix timestamp
+								lastUpdate = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+							} else {
+								// Formatted date (YYYY-MM-DD HH:MM:SS)
+								const parsed = new Date(dateStr);
+								lastUpdate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : installDate;
+							}
 						}
-					}
-					
-					// Get app size using the actual codePath
-					let size = 'Unknown';
-					if (codePathMatch) {
-						const codePath = codePathMatch[1].trim();
-						const sizeCmd = `adb -s ${deviceSerial} shell du -sh "${codePath}" 2>/dev/null | cut -f1`;
-						try {
-							const { stdout: sizeOutput } = await execAsync(sizeCmd);
-							const rawSize = sizeOutput.trim();
-							size = rawSize || 'Unknown';
-						} catch (sizeError) {
-							// Size calculation failed, keep as 'Unknown'
+						
+						// Get app size using the actual codePath
+						let size = 'Unknown';
+						if (codePathMatch) {
+							const codePath = codePathMatch[1].trim();
+							const sizeCmd = `adb -s ${deviceSerial} shell du -sh "${codePath}" 2>/dev/null | cut -f1`;
+							try {
+								const { stdout: sizeOutput } = await execAsync(sizeCmd);
+								const rawSize = sizeOutput.trim();
+								size = rawSize || 'Unknown';
+							} catch (sizeError) {
+								// Size calculation failed, keep as 'Unknown'
+							}
 						}
+						
+						return {
+							packageName,
+							displayName: await generateDisplayName(packageName),
+							type: 'user',
+							size,
+							installDate,
+							lastUpdate,
+							versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown',
+							versionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : 0,
+							category: getAppCategory(packageName),
+							detailsFetched: true,
+							cachedAt: Date.now()
+						};
+					} catch (error) {
+						return {
+							packageName,
+							displayName: await generateDisplayName(packageName),
+							type: 'user',
+							size: 'Unknown',
+							installDate: 'Unknown',
+							lastUpdate: 'Unknown',
+							versionName: 'Unknown',
+							versionCode: 0,
+							category: 'Other',
+							error: error.message,
+							detailsFetched: false,
+							cachedAt: Date.now()
+						};
 					}
-					
-					return {
-						packageName,
-						displayName: await generateDisplayName(packageName),
-						type: 'user',
-						size,
-						installDate,
-						lastUpdate,
-						versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown',
-						versionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : 0,
-						category: getAppCategory(packageName),
-						detailsFetched: true,
-						cachedAt: Date.now()
-					};
-				} catch (error) {
-					return {
-						packageName,
-						displayName: await generateDisplayName(packageName),
-						type: 'user',
-						size: 'Unknown',
-						installDate: 'Unknown',
-						lastUpdate: 'Unknown',
-						versionName: 'Unknown',
-						versionCode: 0,
-						category: 'Other',
-						error: error.message,
-						detailsFetched: false,
-						cachedAt: Date.now()
-					};
-				}
-			})
-		);
+				})
+			);
+			
+			// Add batch results to main array
+			appsWithDetails.push(...batchResults);
+			
+			const batchTime = Date.now() - batchStartTime;
+			log(`[BATCH-PROCESS] Batch ${Math.floor(i/BATCH_SIZE) + 1} completed in ${batchTime}ms (${appsWithDetails.length}/${userAppsList.length} total)`);
+		}
 		
 		// Save to cache for future bulk loads
 		cache = initCache(deviceSerial);
@@ -173,6 +191,8 @@ export async function GET({ url }) {
 			totalSystemApps: 0, // We only fetch user apps for this endpoint
 			apps: appsWithDetails,
 			cached: false,
+			batchProcessed: true,
+			batchSize: BATCH_SIZE,
 			timestamp: new Date().toISOString()
 		});
 		
@@ -187,7 +207,7 @@ export async function GET({ url }) {
 	}
 }
 
-// generateDisplayName function moved to $lib/app-names.js for AAPT integration
+// generateDisplayName function moved to $lib/app-names.js for pure AAPT integration
 
 /**
  * Categorize app based on package name patterns

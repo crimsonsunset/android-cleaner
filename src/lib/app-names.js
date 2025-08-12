@@ -12,8 +12,9 @@ const execAsync = promisify(exec);
 async function extractRealAppName(packageName) {
 	const aaptPath = './tools/sdk/build-tools/34.0.0/aapt';
 	
-	// Skip if AAPT not available
+	// Require AAPT - fail if not available
 	if (!fs.existsSync(aaptPath)) {
+		console.warn(`[AAPT] AAPT binary not found at ${aaptPath}. Run 'npm run setup-aapt' to install.`);
 		return null;
 	}
 	
@@ -40,99 +41,34 @@ async function extractRealAppName(packageName) {
 		return appName || null;
 		
 	} catch (error) {
-		// Silent fail - fallback to other methods
+		console.warn(`[AAPT] Failed to extract app name for ${packageName}: ${error.message}`);
 		return null;
 	}
 }
 
 /**
- * Generate human-readable display name from package name with AAPT integration
+ * Generate human-readable display name from package name using AAPT only
  * @param {string} packageName - Android package name
- * @returns {Promise<string>} Display name
+ * @returns {Promise<string>} Display name or package name if AAPT fails
  */
 export async function generateDisplayName(packageName) {
-	// Step 1: Try to extract real app name using AAPT
+	// AAPT-only extraction for maximum accuracy
 	const realAppName = await extractRealAppName(packageName);
 	if (realAppName) {
 		return realAppName;
 	}
 	
-	// Step 2: Known app mappings (fallback)
-	const knownApps = {
-		'com.spotify.music': 'Spotify',
-		'com.facebook.katana': 'Facebook',
-		'com.instagram.android': 'Instagram',
-		'com.whatsapp': 'WhatsApp',
-		'com.google.android.youtube': 'YouTube',
-		'com.twitter.android': 'Twitter',
-		'com.samsung.android.messaging': 'Samsung Messages',
-		'com.samsung.android.contacts': 'Samsung Contacts',
-		'com.android.chrome': 'Chrome',
-		'com.google.android.gm': 'Gmail',
-		'com.samsung.android.gallery3d': 'Samsung Gallery',
-		'com.google.android.apps.photos': 'Google Photos',
-		'com.netflix.mediaclient': 'Netflix',
-		'com.amazon.mShop.android.shopping': 'Amazon Shopping',
-		'com.paypal.android.p2pmobile': 'PayPal',
-		'com.uber.app': 'Uber',
-		'com.lyft.android': 'Lyft',
-		'com.discord': 'Discord',
-		'com.slack': 'Slack',
-		'com.microsoft.teams': 'Microsoft Teams',
-		'com.quanticapps.remotetvs': 'Remote TV'
-	};
-	
-	if (knownApps[packageName]) {
-		return knownApps[packageName];
-	}
-	
-	// Step 3: Extract meaningful name from package (final fallback)
-	const parts = packageName.split('.');
-	const lastPart = parts[parts.length - 1];
-	
-	// Capitalize and clean up
-	return lastPart.charAt(0).toUpperCase() + lastPart.slice(1).replace(/[_-]/g, ' ');
+	// If AAPT fails, return package name as-is for transparency
+	console.warn(`[AAPT] Failed to extract app name for ${packageName}, using package name`);
+	return packageName;
 }
 
 /**
- * Synchronous version for immediate fallback (legacy compatibility)
+ * Synchronous version - DEPRECATED, use async generateDisplayName instead
  * @param {string} packageName - Android package name
- * @returns {string} Display name
+ * @returns {string} Package name as-is (AAPT requires async operation)
  */
 export function generateDisplayNameSync(packageName) {
-	// Known app mappings
-	const knownApps = {
-		'com.spotify.music': 'Spotify',
-		'com.facebook.katana': 'Facebook',
-		'com.instagram.android': 'Instagram',
-		'com.whatsapp': 'WhatsApp',
-		'com.google.android.youtube': 'YouTube',
-		'com.twitter.android': 'Twitter',
-		'com.samsung.android.messaging': 'Samsung Messages',
-		'com.samsung.android.contacts': 'Samsung Contacts',
-		'com.android.chrome': 'Chrome',
-		'com.google.android.gm': 'Gmail',
-		'com.samsung.android.gallery3d': 'Samsung Gallery',
-		'com.google.android.apps.photos': 'Google Photos',
-		'com.netflix.mediaclient': 'Netflix',
-		'com.amazon.mShop.android.shopping': 'Amazon Shopping',
-		'com.paypal.android.p2pmobile': 'PayPal',
-		'com.uber.app': 'Uber',
-		'com.lyft.android': 'Lyft',
-		'com.discord': 'Discord',
-		'com.slack': 'Slack',
-		'com.microsoft.teams': 'Microsoft Teams',
-		'com.quanticapps.remotetvs': 'Remote TV'
-	};
-	
-	if (knownApps[packageName]) {
-		return knownApps[packageName];
-	}
-	
-	// Extract meaningful name from package
-	const parts = packageName.split('.');
-	const lastPart = parts[parts.length - 1];
-	
-	// Capitalize and clean up
-	return lastPart.charAt(0).toUpperCase() + lastPart.slice(1).replace(/[_-]/g, ' ');
+	console.warn('[AAPT] Sync function deprecated - AAPT requires async operation, returning package name');
+	return packageName;
 }
