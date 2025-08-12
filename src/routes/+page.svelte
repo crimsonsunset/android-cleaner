@@ -22,6 +22,7 @@
 	let selectedDeviceSerial = null; // Currently selected device (fake for now)
 	let batchStartTime = null; // For time estimation
 	let avgBatchTime = 0; // Average time per batch
+	let currentBatchController = null; // AbortController for current batch request
 	
 	// Table sorting
 	let sortColumn = 'displayName';
@@ -138,6 +139,10 @@
 		const BATCH_SIZE = 5;
 		const totalBatches = Math.ceil(packageList.length / BATCH_SIZE);
 		
+		// Reset stop state for new batch processing
+		stopRequested = false;
+		currentBatchController = null;
+		
 		// Initialize progress tracking
 		loadingProgress.expectedTotal = totalApps;
 		loadingProgress.total = totalApps;
@@ -160,6 +165,9 @@
 			const currentBatchStart = Date.now();
 			
 			try {
+				// Create abort controller for this batch
+				currentBatchController = new AbortController();
+				
 				const batchResponse = await fetch('/api/apps/list-batch', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -168,10 +176,14 @@
 						deviceSerial,
 						batchNumber,
 						totalBatches
-					})
+					}),
+					signal: currentBatchController.signal
 				});
 				
 				const batchData = await batchResponse.json();
+				
+				// Clean up controller after successful request
+				currentBatchController = null;
 				
 				if (batchData.success) {
 					// Add new apps to the list
@@ -196,7 +208,12 @@
 					console.error(`[BATCH-${batchNumber}] Failed:`, batchData.error);
 				}
 			} catch (batchError) {
-				console.error(`[BATCH-${batchNumber}] Network error:`, batchError);
+				if (batchError.name === 'AbortError') {
+					console.log(`[BATCH-${batchNumber}] Aborted by user`);
+					break; // Exit the batch processing loop
+				} else {
+					console.error(`[BATCH-${batchNumber}] Network error:`, batchError);
+				}
 			}
 		}
 		
@@ -382,11 +399,26 @@
 	}
 	
 	/**
-	 * Stop batch processing
+	 * Stop batch processing immediately
 	 */
 	function stopBatchProcessing() {
 		stopRequested = true;
-		console.log('[BATCH-STOP] Stop requested by user');
+		
+		// Abort any current batch request
+		if (currentBatchController) {
+			currentBatchController.abort();
+			currentBatchController = null;
+		}
+		
+		// Immediately stop loading state
+		loading = false;
+		
+		console.log(`[BATCH-STOP] Processing stopped immediately at ${apps.length} apps`);
+		
+		// Clear progress after a brief moment to show final count
+		setTimeout(() => {
+			loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0, estimatedSeconds: 0 };
+		}, 1000);
 	}
 	
 	/**
@@ -497,40 +529,33 @@
 				</div>
 			</div>
 			
-			<!-- Search & Filter -->
-			<div class="divider divider-horizontal"></div>
-			<div class="flex items-center gap-3">
-				<input 
-					type="text" 
-					placeholder="Search apps..." 
-					class="input input-bordered input-sm w-48"
-					bind:value={searchTerm}
-				/>
-				
-				<div class="form-control">
-					<label class="label cursor-pointer gap-2">
-						<span class="label-text text-xs">Hide System Apps</span>
-						<input 
-							type="checkbox" 
-							class="toggle toggle-primary toggle-sm" 
-							bind:checked={hideSystemApps} 
-						/>
-					</label>
+			<!-- Search & Filter - only show when apps are loaded -->
+			{#if apps.length > 0}
+				<div class="divider divider-horizontal"></div>
+				<div class="flex items-center gap-3">
+					<input 
+						type="text" 
+						placeholder="Search apps..." 
+						class="input input-bordered input-sm w-48"
+						bind:value={searchTerm}
+					/>
+					
+					<div class="form-control">
+						<label class="label cursor-pointer gap-2">
+							<span class="label-text text-xs">Hide System Apps</span>
+							<input 
+								type="checkbox" 
+								class="toggle toggle-primary toggle-sm" 
+								bind:checked={hideSystemApps} 
+							/>
+						</label>
+					</div>
 				</div>
-			</div>
+			{/if}
 		</div>
 		
 		<div class="navbar-end gap-2">
 			<!-- Action Buttons -->
-			<button 
-				class="btn btn-accent"
-				class:loading={loading}
-				disabled={!connectionStatus?.deviceConnected || loading}
-				on:click={loadApps}
-			>
-				{loading ? '' : '📱'} Load Apps
-			</button>
-			
 			<button 
 				class="btn btn-warning"
 				disabled={loading}
@@ -633,7 +658,7 @@
 							{/if}
 						</p>
 						<button 
-							class="btn btn-sm btn-error mt-2"
+							class="btn btn-sm btn-error mt-2 pointer-events-auto"
 							on:click={stopBatchProcessing}
 						>
 							⏹️ Stop
