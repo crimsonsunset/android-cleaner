@@ -1,27 +1,24 @@
 import { json } from '@sveltejs/kit';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { loadCache, saveCache, getCachedApp, setCachedApp } from '../../../lib/cache.js';
+import { loadCache, saveCache, isCacheValid, getCachedApp, setCachedApp, initCache } from '$lib/cache.js';
 
 const execAsync = promisify(exec);
 
-// Simple console logging for debugging
-function log(message, data = '') {
-	console.log(`[APP-DETAILS] ${message}`, data);
-}
-
 /**
- * Get detailed information for a specific app using dumpsys
- * @returns {Promise<Response>} JSON response with detailed app info
+ * Get detailed information for a specific app package
+ * @returns {Promise<Response>} JSON response with app details
  */
 export async function GET({ url }) {
 	const packageName = url.searchParams.get('package');
 	
 	if (!packageName) {
-		return json({ success: false, error: 'Package name is required' });
+		return json({
+			success: false,
+			error: 'Package name is required',
+			app: null
+		}, { status: 400 });
 	}
-	
-	log(`Getting details for package: ${packageName}`);
 	
 	try {
 		// Get connected devices and prefer Samsung Fold 5
@@ -29,7 +26,11 @@ export async function GET({ url }) {
 		const deviceLines = devicesResult.stdout.split('\n').filter(line => line.includes('\tdevice'));
 		
 		if (deviceLines.length === 0) {
-			return json({ success: false, error: 'No devices connected' });
+			return json({
+				success: false,
+				error: 'No devices connected',
+				app: null
+			});
 		}
 		
 		// Prefer Samsung Fold 5 if available, otherwise use first device
@@ -37,146 +38,219 @@ export async function GET({ url }) {
 		let deviceSerial = deviceLines.find(line => line.includes(samsungFold5))?.split('\t')[0];
 		
 		if (!deviceSerial) {
-			// Fallback to first available device
 			deviceSerial = deviceLines[0].split('\t')[0];
 		}
-
-		// Check cache first
-		const cache = loadCache();
-		const cachedApp = getCachedApp(cache, packageName);
 		
-		if (cachedApp && cache.deviceSerial === deviceSerial) {
-			log(`Using cached data for ${packageName}`);
+		// Load cache and check if we have fresh data for this app
+		let cache = loadCache();
+		
+		// Initialize cache if empty or wrong device
+		if (!isCacheValid(cache, deviceSerial)) {
+			cache = initCache(deviceSerial);
+		}
+		
+		// Check if app is in cache
+		const cachedApp = getCachedApp(cache, packageName);
+		if (cachedApp) {
 			return json({
 				success: true,
 				app: cachedApp,
 				cached: true,
+				deviceSerial,
 				timestamp: new Date().toISOString()
 			});
 		}
 		
-		// Get detailed app info using dumpsys
-		const dumpsysCmd = `adb -s ${deviceSerial} shell dumpsys package ${packageName}`;
-		const dumpsysResult = await execAsync(dumpsysCmd, { timeout: 5000 });
-		
-		// Parse real app name from applicationLabel
-		let displayName = packageName.split('.').pop() || packageName;
-		const labelMatch = dumpsysResult.stdout.match(/applicationLabel=([^\n\r]+)/);
-		if (labelMatch && labelMatch[1]) {
-			displayName = labelMatch[1].trim();
-		}
-		
-		// Parse install date from firstInstallTime
-		let installDate = 'Unknown';
-		const installMatch = dumpsysResult.stdout.match(/firstInstallTime=([^\n\r]+)/);
-		if (installMatch && installMatch[1]) {
-			try {
-				const timestamp = parseInt(installMatch[1].trim());
-				if (!isNaN(timestamp)) {
-					installDate = new Date(timestamp).toISOString().split('T')[0];
-				}
-			} catch (dateErr) {
-				log(`Date parsing failed for ${packageName}:`, dateErr.message);
-			}
-		}
-		
-		// Get app size
-		let size = 'Unknown';
-		try {
-			const sizeCmd = `adb -s ${deviceSerial} shell du -sh /data/app/${packageName}* 2>/dev/null`;
-			const sizeResult = await execAsync(sizeCmd, { timeout: 3000 });
-			const sizeMatch = sizeResult.stdout.trim().split('\t')[0];
-			if (sizeMatch) {
-				size = sizeMatch;
-			}
-		} catch (sizeErr) {
-			// Try alternative size command
-			try {
-				const altSizeCmd = `adb -s ${deviceSerial} shell pm path ${packageName}`;
-				const pathResult = await execAsync(altSizeCmd, { timeout: 3000 });
-				if (pathResult.stdout.includes('package:')) {
-					size = 'Installed';
-				}
-			} catch (altErr) {
-				log(`Size detection failed for ${packageName}:`, altErr.message);
-			}
-		}
-		
-		// Intelligent categorization based on package name and permissions
-		let category = 'Other';
-		const packageLower = packageName.toLowerCase();
-		const dumpsysLower = dumpsysResult.stdout.toLowerCase();
-		
-		if (packageLower.includes('social') || packageLower.includes('facebook') || 
-			packageLower.includes('twitter') || packageLower.includes('instagram') ||
-			packageLower.includes('snapchat') || packageLower.includes('tiktok')) {
-			category = 'Social';
-		} else if (packageLower.includes('game') || packageLower.includes('play') && packageLower.includes('games')) {
-			category = 'Games';
-		} else if (packageLower.includes('music') || packageLower.includes('video') || 
-				   packageLower.includes('spotify') || packageLower.includes('youtube') ||
-				   packageLower.includes('netflix') || packageLower.includes('hulu')) {
-			category = 'Entertainment';
-		} else if (packageLower.includes('bank') || packageLower.includes('pay') || 
-				   packageLower.includes('wallet') || packageLower.includes('chase') ||
-				   packageLower.includes('venmo') || packageLower.includes('zelle')) {
-			category = 'Finance';
-		} else if (packageLower.includes('office') || packageLower.includes('docs') || 
-				   packageLower.includes('sheets') || packageLower.includes('slack') ||
-				   packageLower.includes('teams') || packageLower.includes('zoom')) {
-			category = 'Productivity';
-		} else if (packageLower.includes('camera') || packageLower.includes('photo') || 
-				   packageLower.includes('gallery') || packageLower.includes('image')) {
-			category = 'Photo';
-		}
-		
-		const appInfo = {
-			packageName,
-			displayName: displayName.charAt(0).toUpperCase() + displayName.slice(1),
-			type: 'user',
-			size,
-			installDate,
-			category
-		};
+		// Get fresh app details from device
+		const appDetails = await getAppDetails(deviceSerial, packageName);
 		
 		// Cache the result
-		const cache = loadCache();
-		if (cache.deviceSerial !== deviceSerial) {
-			// Reset cache for new device
-			cache.apps = {};
-			cache.deviceSerial = deviceSerial;
-		}
-		setCachedApp(cache, packageName, appInfo);
-		cache.lastUpdated = Date.now();
+		setCachedApp(cache, packageName, appDetails);
 		saveCache(cache);
 		
-		log(`Successfully retrieved and cached details for ${packageName}:`, appInfo.displayName);
-		
 		return json({
 			success: true,
-			app: appInfo,
+			app: appDetails,
 			cached: false,
+			deviceSerial,
 			timestamp: new Date().toISOString()
 		});
 		
-	} catch (err) {
-		log(`Failed to get details for ${packageName}:`, err.message);
+	} catch (error) {
+		return json({
+			success: false,
+			error: error.message,
+			app: null,
+			deviceSerial: 'unknown',
+			timestamp: new Date().toISOString()
+		}, { status: 500 });
+	}
+}
+
+/**
+ * Get detailed information for a specific app package
+ * @param {string} deviceSerial - Device serial number
+ * @param {string} packageName - Package name to get details for
+ * @returns {Object} App details
+ */
+async function getAppDetails(deviceSerial, packageName) {
+	try {
+		// Get app info using dumpsys
+		const dumpsysCmd = `adb -s ${deviceSerial} shell dumpsys package ${packageName}`;
+		const { stdout: dumpsysOutput } = await execAsync(dumpsysCmd);
 		
-		// Return basic fallback info (don't cache failures)
-		const fallbackApp = {
+		// Parse dumpsys output for key information
+		const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=(\d+)/);
+		const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=(\d+)/);
+		const versionNameMatch = dumpsysOutput.match(/versionName=([^\s]+)/);
+		const versionCodeMatch = dumpsysOutput.match(/versionCode=(\d+)/);
+		
+		// Get app size
+		const sizeCmd = `adb -s ${deviceSerial} shell du -sh /data/app/${packageName}* 2>/dev/null | head -1 || echo "0K"`;
+		const { stdout: sizeOutput } = await execAsync(sizeCmd).catch(() => ({ stdout: '0K' }));
+		const size = sizeOutput.trim().split('\t')[0] || '0K';
+		
+		// Try to get real app name from package manager
+		const nameCmd = `adb -s ${deviceSerial} shell pm list packages -f | grep ${packageName}`;
+		const { stdout: nameOutput } = await execAsync(nameCmd).catch(() => ({ stdout: '' }));
+		
+		// Check if it's a user app or system app
+		const userAppCmd = `adb -s ${deviceSerial} shell pm list packages -3 | grep ${packageName}`;
+		const isUserApp = await execAsync(userAppCmd).then(() => true).catch(() => false);
+		
+		// Parse install date
+		const installDate = firstInstallMatch 
+			? new Date(parseInt(firstInstallMatch[1])).toISOString().split('T')[0]
+			: 'Unknown';
+			
+		const lastUpdate = lastUpdateMatch
+			? new Date(parseInt(lastUpdateMatch[1])).toISOString().split('T')[0]
+			: installDate;
+		
+		// Generate display name
+		const displayName = generateDisplayName(packageName);
+		
+		return {
 			packageName,
-			displayName: packageName.split('.').pop()?.charAt(0).toUpperCase() + packageName.split('.').pop()?.slice(1) || packageName,
-			type: 'user',
-			size: 'Unknown',
-			installDate: 'Unknown',
-			category: 'Other'
+			displayName,
+			type: isUserApp ? 'user' : 'system',
+			size: size === '0K' ? 'Unknown' : size,
+			installDate,
+			lastUpdate,
+			versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown',
+			versionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : 0,
+			category: getAppCategory(packageName),
+			detailsFetched: true
 		};
 		
-		return json({
-			success: true,
-			app: fallbackApp,
-			cached: false,
-			timestamp: new Date().toISOString()
-		});
+	} catch (error) {
+		console.warn(`Failed to get details for ${packageName}:`, error.message);
+		
+		// Return basic info if detailed fetch fails
+		return {
+			packageName,
+			displayName: generateDisplayName(packageName),
+			type: 'unknown',
+			size: 'Unknown',
+			installDate: 'Unknown',
+			lastUpdate: 'Unknown',
+			versionName: 'Unknown',
+			versionCode: 0,
+			category: 'Other',
+			error: error.message,
+			detailsFetched: false
+		};
 	}
+}
+
+/**
+ * Generate human-readable display name from package name
+ * @param {string} packageName - Android package name
+ * @returns {string} Display name
+ */
+function generateDisplayName(packageName) {
+	// Known app mappings
+	const knownApps = {
+		'com.spotify.music': 'Spotify',
+		'com.facebook.katana': 'Facebook',
+		'com.instagram.android': 'Instagram',
+		'com.whatsapp': 'WhatsApp',
+		'com.google.android.youtube': 'YouTube',
+		'com.twitter.android': 'Twitter',
+		'com.samsung.android.messaging': 'Samsung Messages',
+		'com.samsung.android.contacts': 'Samsung Contacts',
+		'com.android.chrome': 'Chrome',
+		'com.google.android.gm': 'Gmail',
+		'com.samsung.android.gallery3d': 'Samsung Gallery',
+		'com.google.android.apps.photos': 'Google Photos',
+		'com.netflix.mediaclient': 'Netflix',
+		'com.amazon.mShop.android.shopping': 'Amazon Shopping',
+		'com.paypal.android.p2pmobile': 'PayPal',
+		'com.uber.app': 'Uber',
+		'com.lyft.android': 'Lyft',
+		'com.discord': 'Discord',
+		'com.slack': 'Slack',
+		'com.microsoft.teams': 'Microsoft Teams'
+	};
+	
+	if (knownApps[packageName]) {
+		return knownApps[packageName];
+	}
+	
+	// Extract meaningful name from package
+	const parts = packageName.split('.');
+	const lastPart = parts[parts.length - 1];
+	
+	// Capitalize and clean up
+	return lastPart.charAt(0).toUpperCase() + lastPart.slice(1).replace(/[_-]/g, ' ');
+}
+
+/**
+ * Categorize app based on package name patterns
+ * @param {string} packageName - Android package name
+ * @returns {string} App category
+ */
+function getAppCategory(packageName) {
+	const name = packageName.toLowerCase();
+	
+	// Social apps
+	if (name.includes('social') || name.includes('facebook') || name.includes('instagram') || 
+		name.includes('twitter') || name.includes('discord') || name.includes('slack') ||
+		name.includes('whatsapp') || name.includes('telegram') || name.includes('snapchat')) {
+		return 'Social';
+	}
+	
+	// Games
+	if (name.includes('game') || name.includes('play') || name.includes('arcade') ||
+		name.includes('puzzle') || name.includes('casino') || name.includes('racing')) {
+		return 'Games';
+	}
+	
+	// Entertainment
+	if (name.includes('music') || name.includes('spotify') || name.includes('youtube') ||
+		name.includes('netflix') || name.includes('video') || name.includes('media') ||
+		name.includes('stream') || name.includes('podcast')) {
+		return 'Entertainment';
+	}
+	
+	// Finance
+	if (name.includes('bank') || name.includes('pay') || name.includes('wallet') ||
+		name.includes('finance') || name.includes('invest') || name.includes('credit')) {
+		return 'Finance';
+	}
+	
+	// Productivity
+	if (name.includes('office') || name.includes('docs') || name.includes('pdf') ||
+		name.includes('note') || name.includes('calendar') || name.includes('email') ||
+		name.includes('microsoft') || name.includes('google')) {
+		return 'Productivity';
+	}
+	
+	// Photo & Camera
+	if (name.includes('camera') || name.includes('photo') || name.includes('gallery') ||
+		name.includes('image') || name.includes('edit')) {
+		return 'Photo';
+	}
+	
+	return 'Other';
 }

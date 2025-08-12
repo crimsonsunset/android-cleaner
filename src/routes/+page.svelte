@@ -1,12 +1,22 @@
 <script>
 	import { onMount } from 'svelte';
 	
+	// Accept but ignore SvelteKit props to prevent warnings
+	export let data = undefined;
+	export let params = undefined;
+	export let url = undefined;
+	export let route = undefined;
+	
+	// Silence unused variable warnings
+	$: void (data, params, url, route);
+	
 	let apps = [];
 	let selectedApps = new Set();
 	let connectionStatus = null;
 	let loading = false;
 	let searchTerm = '';
 	let selectedCategory = 'all';
+	let hideSystemApps = true; // Default to hiding system apps
 	let error = null;
 	
 	// Table sorting
@@ -242,7 +252,8 @@
 			const matchesSearch = app.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
 			                     app.packageName.toLowerCase().includes(searchTerm.toLowerCase());
 			const matchesCategory = selectedCategory === 'all' || app.category === selectedCategory;
-			return matchesSearch && matchesCategory;
+			const matchesSystemFilter = !hideSystemApps || app.type !== 'system';
+			return matchesSearch && matchesCategory && matchesSystemFilter;
 		})
 		.sort((a, b) => {
 			let aVal = a[sortColumn];
@@ -366,6 +377,18 @@
 						{/each}
 					</div>
 					
+					<!-- System Apps Toggle -->
+					<div class="form-control">
+						<label class="label cursor-pointer gap-2">
+							<span class="label-text">Hide System Apps</span>
+							<input 
+								type="checkbox" 
+								class="toggle toggle-primary" 
+								bind:checked={hideSystemApps} 
+							/>
+						</label>
+					</div>
+					
 					<!-- Action Buttons -->
 					<div class="flex gap-2">
 						<button 
@@ -487,6 +510,9 @@
 								<td>
 									<div class="badge badge-{app.type === 'user' ? 'primary' : 'secondary'} badge-sm">
 										{app.type}
+										{#if app.type === 'system'}
+											🔒
+										{/if}
 									</div>
 								</td>
 								<td class="text-sm">{app.size}</td>
@@ -497,6 +523,8 @@
 								<td>
 									<button 
 										class="btn btn-xs btn-error"
+										disabled={app.type === 'system'}
+										title={app.type === 'system' ? 'Cannot uninstall system apps' : 'Uninstall app'}
 										on:click={() => {
 											selectedApps.clear();
 											selectedApps.add(app.packageName);
@@ -504,7 +532,11 @@
 											uninstallSelected();
 										}}
 									>
-										🗑️
+										{#if app.type === 'system'}
+											🔒
+										{:else}
+											🗑️
+										{/if}
 									</button>
 								</td>
 							</tr>
@@ -534,8 +566,60 @@
 					<div class="max-w-md">
 						<h2 class="text-2xl font-bold">🔍 No Apps Found</h2>
 						<p class="py-6">No apps match your current search and filter criteria.</p>
-						<button class="btn btn-outline" on:click={() => {searchTerm = ''; selectedCategory = 'all';}}>
+						<button class="btn btn-outline" on:click={() => {searchTerm = ''; selectedCategory = 'all'; hideSystemApps = true;}}>
 							Clear Filters
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+		
+		<!-- Bulk Actions Bar (appears when apps are selected) -->
+		{#if selectedApps.size > 0}
+			<div class="sticky bottom-4 left-0 right-0 mx-auto max-w-md">
+				<div class="alert alert-info shadow-lg">
+					<div class="flex-1">
+						<span>{selectedApps.size} apps selected</span>
+					</div>
+					<div class="flex-none gap-2">
+						<button class="btn btn-sm btn-ghost" on:click={clearSelection}>
+							Clear
+						</button>
+						<button 
+							class="btn btn-sm btn-error" 
+							on:click={uninstallSelected}
+							disabled={Array.from(selectedApps).every(pkg => {
+								const app = apps.find(a => a.packageName === pkg);
+								return app?.type === 'system';
+							})}
+						>
+							🗑️ Uninstall ({selectedApps.size})
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+		
+		<!-- Bulk Actions Bar (appears when apps are selected) -->
+		{#if selectedApps.size > 0}
+			<div class="sticky bottom-4 left-0 right-0 mx-auto max-w-md">
+				<div class="alert alert-info shadow-lg">
+					<div class="flex-1">
+						<span>{selectedApps.size} apps selected</span>
+					</div>
+					<div class="flex-none gap-2">
+						<button class="btn btn-sm btn-ghost" on:click={clearSelection}>
+							Clear
+						</button>
+						<button 
+							class="btn btn-sm btn-error" 
+							on:click={uninstallSelected}
+							disabled={Array.from(selectedApps).every(pkg => {
+								const app = apps.find(a => a.packageName === pkg);
+								return app?.type === 'system';
+							})}
+						>
+							🗑️ Uninstall ({selectedApps.size})
 						</button>
 					</div>
 				</div>
@@ -543,3 +627,9 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	.hero {
+		background: linear-gradient(135deg, var(--fallback-b1,oklch(var(--b1))) 0%, var(--fallback-b2,oklch(var(--b2))) 100%);
+	}
+</style>
