@@ -19,6 +19,8 @@
 	let error = null;
 	let stopRequested = false; // For halting batch processing
 	let selectedDeviceSerial = null; // Currently selected device (fake for now)
+	let batchStartTime = null; // For time estimation
+	let avgBatchTime = 0; // Average time per batch
 	
 	// Table sorting
 	let sortColumn = 'displayName';
@@ -30,7 +32,8 @@
 		total: 0,
 		percentage: 0,
 		cached: 0,
-		expectedTotal: 0 // Track expected total for batch processing
+		expectedTotal: 0, // Track expected total for batch processing
+		estimatedSeconds: 0 // Time estimate
 	};
 	
 	// No categories - removed per user request
@@ -82,7 +85,7 @@
 		error = null;
 		stopRequested = false;
 		apps = []; // Clear existing apps
-		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0 };
+		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0, estimatedSeconds: 0 };
 		
 		try {
 			// Get app list or cached data
@@ -118,11 +121,11 @@
 		} catch (err) {
 			error = 'Network error loading apps';
 			console.error('Load apps failed:', err);
-		} finally {
+		} 		finally {
 			loading = false;
 			// Keep progress visible briefly to show completion
 			setTimeout(() => {
-				loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0 };
+				loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0, estimatedSeconds: 0 };
 			}, 1000);
 		}
 	}
@@ -139,6 +142,8 @@
 		loadingProgress.total = totalApps;
 		loadingProgress.current = 0;
 		loadingProgress.percentage = 0;
+		batchStartTime = Date.now();
+		avgBatchTime = 0;
 		
 		console.log(`[BATCH-START] Processing ${totalApps} apps in ${totalBatches} batches of ${BATCH_SIZE}`);
 		
@@ -151,6 +156,7 @@
 			
 			const batch = packageList.slice(i, i + BATCH_SIZE);
 			const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+			const currentBatchStart = Date.now();
 			
 			try {
 				const batchResponse = await fetch('/api/apps/list-batch', {
@@ -173,6 +179,13 @@
 					// Update progress
 					loadingProgress.current = apps.length;
 					loadingProgress.percentage = Math.round((apps.length / totalApps) * 100);
+					
+					// Calculate time estimates
+					const batchTime = Date.now() - currentBatchStart;
+					avgBatchTime = ((avgBatchTime * (batchNumber - 1)) + batchTime) / batchNumber;
+					const remainingBatches = totalBatches - batchNumber;
+					const estimatedTimeRemaining = Math.round((remainingBatches * avgBatchTime) / 1000);
+					loadingProgress.estimatedSeconds = estimatedTimeRemaining;
 					
 					console.log(`[BATCH-${batchNumber}] Completed: ${apps.length}/${totalApps} apps (${loadingProgress.percentage}%)`);
 					
@@ -362,6 +375,36 @@
 		stopRequested = true;
 		console.log('[BATCH-STOP] Stop requested by user');
 	}
+	
+	/**
+	 * Format time estimate in minutes and seconds
+	 */
+	function formatTimeEstimate(seconds) {
+		if (seconds <= 0) return '';
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = seconds % 60;
+		if (minutes > 0) {
+			return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+		}
+		return `${remainingSeconds}s`;
+	}
+	
+	/**
+	 * Format date from YYYY-MM-DD to MM/DD/YYYY
+	 */
+	function formatDate(dateString) {
+		if (!dateString || dateString === 'Unknown') return dateString;
+		try {
+			const parts = dateString.split('-');
+			if (parts.length === 3) {
+				const [year, month, day] = parts;
+				return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year}`;
+			}
+		} catch (error) {
+			console.warn('Date formatting error:', error);
+		}
+		return dateString;
+	}
 </script>
 
 <svelte:head>
@@ -372,7 +415,14 @@
 	<!-- Header -->
 	<div class="navbar bg-base-300 shadow-lg">
 		<div class="navbar-start">
-			<h1 class="btn btn-ghost text-xl">📱 Android Cleaner</h1>
+			<h1 class="text-xl font-bold">📱 Android Cleaner</h1>
+			<button 
+				class="btn btn-square btn-ghost btn-sm ml-2" 
+				on:click={checkConnection}
+				title="Check ADB connection status"
+			>
+				🔄
+			</button>
 		</div>
 		<div class="navbar-center">
 			<div class="stats stats-horizontal">
@@ -381,7 +431,9 @@
 					<div class="stat-value text-sm">
 						{connectionStatus?.deviceConnected ? '✅ Connected' : '❌ Disconnected'}
 					</div>
-					<div class="stat-desc">{connectionStatus?.deviceInfo?.displayName || connectionStatus?.deviceInfo?.model || 'Unknown Device'}</div>
+					<div class="stat-desc">
+						{connectionStatus?.deviceInfo?.displayName || connectionStatus?.deviceInfo?.model || 'Unknown Device'}
+					</div>
 				</div>
 				<div class="stat">
 					<div class="stat-title">Apps Loaded</div>
@@ -393,10 +445,44 @@
 				</div>
 			</div>
 		</div>
-		<div class="navbar-end">
-			<button class="btn btn-primary" on:click={checkConnection}>
-				🔄 Check Connection
-			</button>
+		<div class="navbar-end gap-2">
+			{#if connectionStatus?.allDevices && connectionStatus.allDevices.length > 1}
+				<!-- Multiple devices - show dropdown -->
+				<div class="dropdown dropdown-bottom dropdown-end">
+					<div tabindex="0" role="button" class="btn btn-sm btn-outline">
+						📱 {connectionStatus?.deviceInfo?.displayName || connectionStatus?.deviceInfo?.model || 'Select Device'}
+						<svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+						</svg>
+					</div>
+					<ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[999] w-64 p-2 shadow-xl border">
+						{#each connectionStatus.allDevices as device}
+							<li>
+								<button 
+									class="text-left {device.serial === selectedDeviceSerial ? 'active' : ''}"
+									on:click={() => switchDevice(device.serial)}
+								>
+									<div class="flex items-center gap-2">
+										{#if device.serial === selectedDeviceSerial}
+											<span class="text-primary">●</span>
+										{:else}
+											<span class="text-base-content/30">○</span>
+										{/if}
+										<div>
+											<div class="font-medium">{device.serial}</div>
+											<div class="text-xs text-base-content/60">{device.status}</div>
+										</div>
+									</div>
+								</button>
+							</li>
+						{/each}
+						<li><hr class="my-1" /></li>
+						<li class="text-xs text-base-content/60 px-3 py-1">
+							🚧 Device switching coming soon
+						</li>
+					</ul>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -465,7 +551,7 @@
 						</button>
 						
 						<button 
-							class="btn btn-ghost btn-sm"
+							class="btn btn-warning"
 							disabled={loading}
 							on:click={clearCache}
 							title="Clear cache to force fresh data"
@@ -486,54 +572,68 @@
 		</div>
 
 		<!-- Apps Table -->
-		{#if loading}
+		{#if loading && apps.length === 0}
 			<div class="overflow-x-auto">
 				<div class="flex flex-col gap-4 p-8 text-center">
-					<div class="flex items-center justify-center gap-4">
-						<span class="loading loading-spinner loading-lg text-primary"></span>
-						<div>
-							<p class="text-lg font-medium">Loading apps...</p>
-							<div class="flex items-center gap-4">
-								<p class="text-sm text-base-content/70">
-									{#if loadingProgress.expectedTotal > 0}
-										{loadingProgress.current}/{loadingProgress.expectedTotal} apps processed
-									{:else}
-										Reading app data from Samsung Fold 5
-									{/if}
-								</p>
-								{#if loadingProgress.expectedTotal > 0}
-									<button 
-										class="btn btn-sm btn-error"
-										on:click={stopBatchProcessing}
-									>
-										⏹️ Stop
-									</button>
-								{/if}
-							</div>
-							<p class="text-xs text-base-content/60">
-								{#if loadingProgress.expectedTotal > 0}
-									🔄 AAPT batch processing ({loadingProgress.percentage}% complete)
-								{:else}
-									⚡ Checking cache or starting fresh scan
-								{/if}
-							</p>
-						</div>
+					<div>
+						<p class="text-lg font-medium">Loading apps...</p>
+						<p class="text-xs text-base-content/60">
+							{#if loadingProgress.expectedTotal === 0}
+								⚡ Checking cache or starting fresh scan
+							{/if}
+						</p>
 					</div>
+					
 					{#if loadingProgress.expectedTotal > 0}
 						<progress class="progress progress-primary w-full max-w-md mx-auto" 
 							value={loadingProgress.current} 
 							max={loadingProgress.expectedTotal}></progress>
-						<p class="text-xs text-center mt-2 text-base-content/60">
+						<p class="text-sm text-center mt-2 text-base-content/70">
 							{loadingProgress.current}/{loadingProgress.expectedTotal} apps processed
+							{#if loadingProgress.estimatedSeconds > 0}
+								• ~{formatTimeEstimate(loadingProgress.estimatedSeconds)} remaining
+							{/if}
 						</p>
 					{:else}
 						<progress class="progress progress-primary w-full max-w-md mx-auto"></progress>
 					{/if}
+					
+					{#if loadingProgress.expectedTotal > 0}
+						<div class="mt-4">
+							<button 
+								class="btn btn-error"
+								on:click={stopBatchProcessing}
+							>
+								⏹️ Stop
+							</button>
+						</div>
+					{/if}
 				</div>
 			</div>
-		{:else if filteredApps.length > 0}
-			<div class="overflow-x-auto {loading ? 'pointer-events-none opacity-75' : ''}">
-				<table class="table table-zebra table-hover">
+		{:else if filteredApps.length > 0 || (loading && apps.length > 0)}
+							<!-- Show table with apps, disabled during loading -->
+				<div class="overflow-x-auto {loading ? 'pointer-events-none opacity-75' : ''} min-w-full">
+				{#if loading}
+					<!-- Loading progress overlay -->
+					<div class="bg-base-200 p-4 mb-4 rounded-lg text-center">
+						<progress class="progress progress-primary w-full max-w-md mx-auto" 
+							value={loadingProgress.current} 
+							max={loadingProgress.expectedTotal}></progress>
+						<p class="text-sm mt-2 text-base-content/70">
+							{loadingProgress.current}/{loadingProgress.expectedTotal} apps processed
+							{#if loadingProgress.estimatedSeconds > 0}
+								• ~{formatTimeEstimate(loadingProgress.estimatedSeconds)} remaining
+							{/if}
+						</p>
+						<button 
+							class="btn btn-sm btn-error mt-2"
+							on:click={stopBatchProcessing}
+						>
+							⏹️ Stop
+						</button>
+					</div>
+				{/if}
+									<table class="table table-zebra table-hover table-pin-rows table-pin-cols min-w-full">
 					<thead>
 						<tr>
 							<th>
@@ -571,6 +671,37 @@
 									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
 								{/if}
 							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('lastUsed')}>
+								Last Used
+								{#if sortColumn === 'lastUsed'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('targetSdk')}>
+								Target SDK
+								{#if sortColumn === 'targetSdk'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('installSource')}>
+								Source
+								{#if sortColumn === 'installSource'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('isEnabled')}>
+								Status
+								{#if sortColumn === 'isEnabled'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('dataSize')}>
+								Data Size
+								{#if sortColumn === 'dataSize'}
+									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+								{/if}
+							</th>
+							<th>Flags</th>
 							<!-- Category column removed -->
 							<th>Actions</th>
 						</tr>
@@ -594,7 +725,43 @@
 									</div>
 								</td>
 								<td class="text-sm">{app.size}</td>
-								<td class="text-sm">{app.installDate}</td>
+								<td class="text-sm">{formatDate(app.installDate)}</td>
+								<td class="text-sm">{formatDate(app.lastUsed)}</td>
+								<td class="text-sm">
+									{#if app.targetSdk}
+										<span class="badge badge-sm {app.targetSdk >= 33 ? 'badge-success' : app.targetSdk >= 29 ? 'badge-warning' : 'badge-error'}">
+											{app.targetSdk}
+										</span>
+									{:else}
+										<span class="text-base-content/50">—</span>
+									{/if}
+								</td>
+								<td class="text-xs">
+									<span class="badge badge-outline badge-xs">
+										{app.installSource}
+									</span>
+								</td>
+								<td class="text-sm">
+									{#if app.isEnabled}
+										<span class="text-success">✓</span>
+									{:else}
+										<span class="text-error">✗</span>
+									{/if}
+								</td>
+								<td class="text-sm">{app.dataSize}</td>
+								<td class="text-xs">
+									{#if app.appFlags && app.appFlags.length > 0}
+										<div class="flex flex-wrap gap-1">
+											{#each app.appFlags as flag}
+												<span class="badge badge-ghost badge-xs" title={flag}>
+													{flag.substring(0, 3)}
+												</span>
+											{/each}
+										</div>
+									{:else}
+										<span class="text-base-content/50">—</span>
+									{/if}
+								</td>
 								<td>
 									<button 
 										class="btn btn-xs btn-error"

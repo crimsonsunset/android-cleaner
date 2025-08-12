@@ -18,6 +18,8 @@ async function extractRealAppName(packageName) {
 		return null;
 	}
 	
+	let tempApkPath = null;
+	
 	try {
 		// Get APK path from device
 		const { stdout: pathOutput } = await execAsync(`adb -s RFCW708JTVX shell pm path ${packageName}`);
@@ -28,21 +30,27 @@ async function extractRealAppName(packageName) {
 		}
 		
 		// Pull APK from device
-		const tempApkPath = `temp_${packageName.replace(/\./g, '_')}.apk`;
+		tempApkPath = `temp_${packageName.replace(/\./g, '_')}.apk`;
 		await execAsync(`adb -s RFCW708JTVX pull "${apkPath}" ${tempApkPath}`);
 		
 		// Extract app name using AAPT
 		const { stdout: aaptOutput } = await execAsync(`${aaptPath} dump badging ${tempApkPath} | grep application-label`);
 		const appName = aaptOutput.match(/application-label:'([^']+)'/)?.[1];
 		
-		// Cleanup temp APK
-		fs.unlinkSync(tempApkPath);
-		
 		return appName || null;
 		
 	} catch (error) {
 		console.warn(`[AAPT] Failed to extract app name for ${packageName}: ${error.message}`);
 		return null;
+	} finally {
+		// Always cleanup temp APK file, even on errors
+		if (tempApkPath && fs.existsSync(tempApkPath)) {
+			try {
+				fs.unlinkSync(tempApkPath);
+			} catch (cleanupError) {
+				console.warn(`[AAPT] Failed to cleanup temp file ${tempApkPath}: ${cleanupError.message}`);
+			}
+		}
 	}
 }
 

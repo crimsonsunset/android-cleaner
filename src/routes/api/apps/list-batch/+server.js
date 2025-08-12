@@ -41,9 +41,17 @@ export async function POST({ request }) {
 					// Parse dumpsys output for key information
 					const firstInstallMatch = dumpsysOutput.match(/firstInstallTime=([^\n]+)/);
 					const lastUpdateMatch = dumpsysOutput.match(/lastUpdateTime=([^\n]+)/);
+					const timeStampMatch = dumpsysOutput.match(/timeStamp=([^\n]+)/);
 					const versionNameMatch = dumpsysOutput.match(/versionName=([^\s]+)/);
 					const versionCodeMatch = dumpsysOutput.match(/versionCode=(\d+)/);
 					const codePathMatch = dumpsysOutput.match(/codePath=([^\n]+)/);
+					
+					// Parse additional useful information
+					const targetSdkMatch = dumpsysOutput.match(/targetSdk=(\d+)/);
+					const installerMatch = dumpsysOutput.match(/installerPackageName=([^\n\s]+)/);
+					const enabledMatch = dumpsysOutput.match(/enabled=(\d+)/);
+					const flagsMatch = dumpsysOutput.match(/flags=\[\s*([^\]]+)\s*\]/);
+					const dataDirectoryMatch = dumpsysOutput.match(/dataDir=([^\n\s]+)/);
 					
 					// Parse install date (handle both Unix timestamps and formatted dates)
 					let installDate = 'Unknown';
@@ -71,6 +79,20 @@ export async function POST({ request }) {
 							lastUpdate = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : installDate;
 						}
 					}
+
+					// Parse last used time (timeStamp field)
+					let lastUsed = 'Unknown';
+					if (timeStampMatch) {
+						const dateStr = timeStampMatch[1].trim();
+						if (/^\d+$/.test(dateStr)) {
+							// Unix timestamp
+							lastUsed = new Date(parseInt(dateStr)).toISOString().split('T')[0];
+						} else {
+							// Formatted date (YYYY-MM-DD HH:MM:SS)
+							const parsed = new Date(dateStr);
+							lastUsed = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : 'Unknown';
+						}
+					}
 					
 					// Get app size using the actual codePath
 					let size = 'Unknown';
@@ -85,6 +107,54 @@ export async function POST({ request }) {
 							// Size calculation failed, keep as 'Unknown'
 						}
 					}
+
+					// Parse additional fields
+					const targetSdk = targetSdkMatch ? parseInt(targetSdkMatch[1]) : null;
+					
+					// Parse installer package name and make it human-readable
+					let installSource = 'Unknown';
+					if (installerMatch) {
+						const installer = installerMatch[1];
+						switch (installer) {
+							case 'com.android.vending':
+								installSource = 'Play Store';
+								break;
+							case 'com.sec.android.app.samsungapps':
+								installSource = 'Samsung Store';
+								break;
+							case 'com.amazon.venezia':
+								installSource = 'Amazon Store';
+								break;
+							case 'null':
+								installSource = 'Sideloaded';
+								break;
+							default:
+								installSource = installer.includes('.') ? installer.split('.').pop() : installer;
+						}
+					}
+					
+					// Parse enabled status
+					const isEnabled = enabledMatch ? enabledMatch[1] === '0' : true; // 0 = enabled, higher = disabled
+					
+					// Parse app flags
+					let appFlags = [];
+					if (flagsMatch) {
+						appFlags = flagsMatch[1].split(/\s+/).filter(flag => flag.length > 0);
+					}
+					
+					// Get data directory size if available
+					let dataSize = 'Unknown';
+					if (dataDirectoryMatch) {
+						const dataDir = dataDirectoryMatch[1].trim();
+						const dataSizeCmd = `adb -s ${deviceSerial} shell du -sh "${dataDir}" 2>/dev/null | cut -f1`;
+						try {
+							const { stdout: dataSizeOutput } = await execAsync(dataSizeCmd);
+							const rawDataSize = dataSizeOutput.trim();
+							dataSize = rawDataSize || 'Unknown';
+						} catch (dataSizeError) {
+							// Data size calculation failed, keep as 'Unknown'
+						}
+					}
 					
 					return {
 						packageName,
@@ -93,8 +163,14 @@ export async function POST({ request }) {
 						size,
 						installDate,
 						lastUpdate,
+						lastUsed,
 						versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown',
 						versionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : 0,
+						targetSdk,
+						installSource,
+						isEnabled,
+						appFlags: appFlags.slice(0, 3), // Limit to top 3 flags to keep data manageable
+						dataSize,
 						detailsFetched: true,
 						cachedAt: Date.now()
 					};
@@ -106,8 +182,14 @@ export async function POST({ request }) {
 						size: 'Unknown',
 						installDate: 'Unknown',
 						lastUpdate: 'Unknown',
+						lastUsed: 'Unknown',
 						versionName: 'Unknown',
 						versionCode: 0,
+						targetSdk: null,
+						installSource: 'Unknown',
+						isEnabled: true,
+						appFlags: [],
+						dataSize: 'Unknown',
 						error: error.message,
 						detailsFetched: false,
 						cachedAt: Date.now()

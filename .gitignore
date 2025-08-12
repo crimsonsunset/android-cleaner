@@ -27,3 +27,6 @@ vite.config.ts.timestamp-*
 
 # App cache (contains personal device data)
 app-cache.json
+
+# Temporary APK files from AAPT extraction
+temp_*.apk
