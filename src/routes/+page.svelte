@@ -17,6 +17,7 @@
 	let searchTerm = '';
 	let hideSystemApps = true; // Default to hiding system apps
 	let error = null;
+	let toast = null; // Toast notification state
 	let stopRequested = false; // For halting batch processing
 	let selectedDeviceSerial = null; // Currently selected device (fake for now)
 	let batchStartTime = null; // For time estimation
@@ -252,7 +253,8 @@
 				selectedApps = selectedApps; // Trigger reactivity
 				
 				// Show results summary
-				alert(`Uninstall complete: ${data.successCount} successful, ${data.failureCount} failed`);
+				const message = `Uninstall complete: ${data.successCount} successful, ${data.failureCount} failed`;
+				showToast(message, data.failureCount > 0 ? 'warning' : 'success');
 			} else {
 				error = data.error || 'Uninstall failed';
 			}
@@ -329,7 +331,7 @@
 			const data = await response.json();
 			
 			if (data.success) {
-				alert('Cache cleared! Next load will fetch fresh data.');
+				showToast('Cache cleared! Next load will fetch fresh data.', 'success');
 			} else {
 				error = data.error || 'Failed to clear cache';
 			}
@@ -367,6 +369,17 @@
 	 * Check if all visible apps are selected
 	 */
 	$: selectAll = filteredApps.length > 0 && filteredApps.every(app => selectedApps.has(app.packageName));
+	
+	/**
+	 * Show toast notification
+	 */
+	function showToast(message, type = 'success') {
+		toast = { message, type };
+		// Auto-hide after 3 seconds
+		setTimeout(() => {
+			toast = null;
+		}, 3000);
+	}
 	
 	/**
 	 * Stop batch processing
@@ -415,78 +428,130 @@
 	<!-- Header -->
 	<div class="navbar bg-base-300 shadow-lg">
 		<div class="navbar-start">
-			<h1 class="text-xl font-bold">📱 Android Cleaner</h1>
-			<button 
-				class="btn btn-square btn-ghost btn-sm ml-2" 
-				on:click={checkConnection}
-				title="Check ADB connection status"
-			>
-				🔄
-			</button>
-		</div>
-		<div class="navbar-center">
-			<div class="stats stats-horizontal">
-				<div class="stat">
-					<div class="stat-title">Device</div>
-					<div class="stat-value text-sm">
-						{connectionStatus?.deviceConnected ? '✅ Connected' : '❌ Disconnected'}
-					</div>
-					<div class="stat-desc">
-						{connectionStatus?.deviceInfo?.displayName || connectionStatus?.deviceInfo?.model || 'Unknown Device'}
-					</div>
+			<div class="flex flex-col">
+				<div class="flex items-center">
+					<h1 class="text-xl font-bold">📱 Android Cleaner</h1>
+					<button 
+						class="btn btn-square btn-ghost btn-sm ml-2" 
+						on:click={checkConnection}
+						title="Check ADB connection status"
+					>
+						🔄
+					</button>
 				</div>
-				<div class="stat">
-					<div class="stat-title">Apps Loaded</div>
-					<div class="stat-value text-lg">{apps.length}</div>
-				</div>
-				<div class="stat">
-					<div class="stat-title">Selected</div>
-					<div class="stat-value text-lg">{selectedApps.size}</div>
-				</div>
-			</div>
-		</div>
-		<div class="navbar-end gap-2">
-			{#if connectionStatus?.allDevices && connectionStatus.allDevices.length > 1}
-				<!-- Multiple devices - show dropdown -->
-				<div class="dropdown dropdown-bottom dropdown-end">
-					<div tabindex="0" role="button" class="btn btn-sm btn-outline">
-						📱 {connectionStatus?.deviceInfo?.displayName || connectionStatus?.deviceInfo?.model || 'Select Device'}
+				{#if connectionStatus?.allDevices && connectionStatus.allDevices.length > 1}
+					<!-- Multiple devices - show dropdown under title -->
+					<div class="dropdown dropdown-bottom">
+											<div tabindex="0" role="button" class="btn btn-xs btn-ghost mt-1">
+						{connectionStatus?.deviceInfo?.displayName || 'Select Device'}
 						<svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
 						</svg>
 					</div>
-					<ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[999] w-64 p-2 shadow-xl border">
-						{#each connectionStatus.allDevices as device}
-							<li>
-								<button 
-									class="text-left {device.serial === selectedDeviceSerial ? 'active' : ''}"
-									on:click={() => switchDevice(device.serial)}
-								>
-									<div class="flex items-center gap-2">
-										{#if device.serial === selectedDeviceSerial}
-											<span class="text-primary">●</span>
-										{:else}
-											<span class="text-base-content/30">○</span>
-										{/if}
+						<ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[999] w-64 p-2 shadow-xl border">
+							{#each connectionStatus.allDevices as device}
+								<li>
+									<button 
+										class="text-left {device.serial === selectedDeviceSerial ? 'active' : ''}"
+										on:click={() => switchDevice(device.serial)}
+									>
+										<div class="flex items-center gap-2">
+											{#if device.serial === selectedDeviceSerial}
+												<span class="text-primary">●</span>
+											{:else}
+												<span class="text-base-content/30">○</span>
+											{/if}
 										<div>
-											<div class="font-medium">{device.serial}</div>
-											<div class="text-xs text-base-content/60">{device.status}</div>
+											<div class="font-medium">{device.displayName || device.serial}</div>
+											<div class="text-xs font-mono">{device.serial}</div>
 										</div>
-									</div>
-								</button>
+										</div>
+									</button>
+								</li>
+							{/each}
+							<li><hr class="my-1" /></li>
+							<li class="text-xs text-base-content/60 px-3 py-1">
+								🚧 Device switching coming soon
 							</li>
-						{/each}
-						<li><hr class="my-1" /></li>
-						<li class="text-xs text-base-content/60 px-3 py-1">
-							🚧 Device switching coming soon
-						</li>
-					</ul>
+						</ul>
+					</div>
+				{/if}
+			</div>
+			
+			<!-- Inline Stats -->
+			<div class="divider divider-horizontal"></div>
+			<div class="flex items-center gap-4 text-sm">
+				<div class="flex items-center gap-1">
+					<span class="font-medium">Status:</span>
+					<span class="{connectionStatus?.deviceConnected ? 'text-success' : 'text-error'}">
+						{connectionStatus?.deviceConnected ? '✅ Connected' : '❌ Disconnected'}
+					</span>
 				</div>
-			{/if}
+				<div class="flex items-center gap-1">
+					<span class="font-medium">Apps:</span>
+					<span class="badge badge-primary badge-sm">{apps.length}</span>
+				</div>
+				<div class="flex items-center gap-1">
+					<span class="font-medium">Selected:</span>
+					<span class="badge badge-secondary badge-sm">{selectedApps.size}</span>
+				</div>
+			</div>
+			
+			<!-- Search & Filter -->
+			<div class="divider divider-horizontal"></div>
+			<div class="flex items-center gap-3">
+				<input 
+					type="text" 
+					placeholder="Search apps..." 
+					class="input input-bordered input-sm w-48"
+					bind:value={searchTerm}
+				/>
+				
+				<div class="form-control">
+					<label class="label cursor-pointer gap-2">
+						<span class="label-text text-xs">Hide System Apps</span>
+						<input 
+							type="checkbox" 
+							class="toggle toggle-primary toggle-sm" 
+							bind:checked={hideSystemApps} 
+						/>
+					</label>
+				</div>
+			</div>
+		</div>
+		
+		<div class="navbar-end gap-2">
+			<!-- Action Buttons -->
+			<button 
+				class="btn btn-accent"
+				class:loading={loading}
+				disabled={!connectionStatus?.deviceConnected || loading}
+				on:click={loadApps}
+			>
+				{loading ? '' : '📱'} Load Apps
+			</button>
+			
+			<button 
+				class="btn btn-warning"
+				disabled={loading}
+				on:click={clearCache}
+				title="Clear cache to force fresh data"
+			>
+				🗑️ Clear Cache
+			</button>
+			
+			<button 
+				class="btn btn-error"
+				disabled={selectedApps.size === 0 || loading}
+				on:click={uninstallSelected}
+				title="Uninstall selected apps"
+			>
+				❌ Uninstall ({selectedApps.size})
+			</button>
 		</div>
 	</div>
 
-	<div class="container mx-auto p-4">
+	<div class="w-full px-4 py-4">
 		<!-- Bulk Actions Bar -->
 		{#if selectedApps.size > 0}
 			<div class="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-base-100 shadow-xl border rounded-lg p-4 flex items-center gap-4 z-50">
@@ -511,65 +576,7 @@
 			</div>
 		{/if}
 
-		<!-- Controls -->
-		<div class="card bg-base-200 shadow-xl mb-6">
-			<div class="card-body">
-				<div class="flex flex-wrap gap-4 items-center justify-between">
-					<!-- Search -->
-					<div class="form-control">
-						<input 
-							type="text" 
-							placeholder="Search apps..." 
-							class="input input-bordered w-full max-w-xs"
-							bind:value={searchTerm}
-						/>
-					</div>
-					
-					<!-- No category filters - removed per user request -->
-					
-					<!-- System Apps Toggle -->
-					<div class="form-control">
-						<label class="label cursor-pointer gap-2">
-							<span class="label-text">Hide System Apps</span>
-							<input 
-								type="checkbox" 
-								class="toggle toggle-primary" 
-								bind:checked={hideSystemApps} 
-							/>
-						</label>
-					</div>
-					
-					<!-- Action Buttons -->
-					<div class="flex gap-2">
-						<button 
-							class="btn btn-accent"
-							class:loading={loading}
-							disabled={!connectionStatus?.deviceConnected || loading}
-							on:click={loadApps}
-						>
-							{loading ? '' : '📱'} Load Apps
-						</button>
-						
-						<button 
-							class="btn btn-warning"
-							disabled={loading}
-							on:click={clearCache}
-							title="Clear cache to force fresh data"
-						>
-							🗑️ Clear Cache
-						</button>
-						
-						<button 
-							class="btn btn-error"
-							disabled={selectedApps.size === 0 || loading}
-							on:click={uninstallSelected}
-						>
-							🗑️ Uninstall ({selectedApps.size})
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
+
 
 		<!-- Apps Table -->
 		{#if loading && apps.length === 0}
@@ -868,6 +875,15 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Toast Notification -->
+	{#if toast}
+		<div class="toast toast-bottom toast-center">
+			<div class="alert {toast.type === 'success' ? 'alert-primary' : toast.type === 'error' ? 'alert-error' : toast.type === 'warning' ? 'alert-warning' : 'alert-info'}">
+				<span>{toast.message}</span>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
