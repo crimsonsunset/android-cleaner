@@ -74,6 +74,18 @@ export function setCachedApp(cache, packageName, appData) {
 }
 
 /**
+ * Remove apps from cache
+ * @param {Object} cache - Cache object
+ * @param {string[]} packageNames - Array of package names to remove
+ */
+export function removeCachedApps(cache, packageNames) {
+	packageNames.forEach(packageName => {
+		delete cache.apps[packageName];
+	});
+	console.log(`[CACHE] Removed ${packageNames.length} apps from cache`);
+}
+
+/**
  * Initialize cache for device
  * @param {string} deviceSerial - Device serial number
  * @returns {Object} Initialized cache object

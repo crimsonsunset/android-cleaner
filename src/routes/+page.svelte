@@ -21,6 +21,8 @@
 	let stopRequested = false; // For halting batch processing
 	let showUninstallModal = false; // For DaisyUI confirmation modal
 	let showClearCacheModal = false; // For clear cache confirmation modal
+	let showFailedUninstallsModal = false; // For failed uninstalls modal
+	let failedUninstalls = []; // Track failed uninstall attempts
 	let selectedDeviceSerial = null; // Currently selected device (fake for now)
 	let shiftSelectAnchor = null; // For shift-click range selection
 	let batchStartTime = null; // For time estimation
@@ -272,6 +274,18 @@
 				selectedApps.clear();
 				selectedApps = selectedApps; // Trigger reactivity
 				
+				// Track failed uninstalls
+				const currentFailures = data.results
+					.filter(r => !r.success)
+					.map(r => ({
+						...r,
+						displayName: apps.find(app => app.packageName === r.packageName)?.displayName || r.packageName,
+						timestamp: new Date().toISOString()
+					}));
+				
+				// Add to failed uninstalls list (keeping most recent at top)
+				failedUninstalls = [...currentFailures, ...failedUninstalls];
+				
 				// Show results summary
 				const message = `Uninstall complete: ${data.successCount} successful, ${data.failureCount} failed`;
 				showToast(message, data.failureCount > 0 ? 'warning' : 'success');
@@ -500,6 +514,7 @@
 				loading = false;
 				searchTerm = '';
 				hideSystemApps = true;
+				failedUninstalls = []; // Clear failed uninstalls history
 				
 				// Reset progress
 				loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0, estimatedSeconds: 0 };
@@ -519,6 +534,29 @@
 	 */
 	function cancelClearCache() {
 		showClearCacheModal = false;
+	}
+
+	/**
+	 * Show failed uninstalls modal
+	 */
+	function showFailedUninstalls() {
+		showFailedUninstallsModal = true;
+	}
+
+	/**
+	 * Close failed uninstalls modal
+	 */
+	function closeFailedUninstalls() {
+		showFailedUninstallsModal = false;
+	}
+
+	/**
+	 * Clear failed uninstalls history
+	 */
+	function clearFailedUninstalls() {
+		failedUninstalls = [];
+		showFailedUninstallsModal = false;
+		showToast('Failed uninstalls history cleared.', 'success');
 	}
 
 	/**
@@ -773,6 +811,16 @@
 		
 		<div class="navbar-end gap-2">
 			<!-- Action Buttons -->
+			{#if failedUninstalls.length > 0}
+				<button 
+					class="btn btn-error btn-outline"
+					on:click={showFailedUninstalls}
+					title="View apps that failed to uninstall"
+				>
+					❌ Failed ({failedUninstalls.length})
+				</button>
+			{/if}
+			
 			<button 
 				class="btn btn-warning"
 				disabled={loading}
@@ -1144,6 +1192,50 @@
 					</button>
 					<button class="btn btn-warning" on:click={confirmClearCache}>
 						🧹 Clear Cache
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Failed Uninstalls Modal -->
+	{#if showFailedUninstallsModal}
+		<div class="modal modal-open">
+			<div class="modal-box w-11/12 max-w-5xl">
+				<h3 class="font-bold text-lg">❌ Failed Uninstalls ({failedUninstalls.length})</h3>
+				<p class="py-2 text-sm text-base-content/70">
+					Apps that could not be uninstalled. Some may be system apps or require special permissions.
+				</p>
+				
+				<div class="overflow-x-auto max-h-96 mt-4">
+					<table class="table table-zebra table-sm">
+						<thead>
+							<tr>
+								<th>App Name</th>
+								<th>Package Name</th>
+								<th>Error</th>
+								<th>Time</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each failedUninstalls as failure}
+								<tr>
+									<td class="font-medium">{failure.displayName}</td>
+									<td class="font-mono text-xs">{failure.packageName}</td>
+									<td class="text-error text-xs">{failure.error}</td>
+									<td class="text-xs">{new Date(failure.timestamp).toLocaleTimeString()}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				
+				<div class="modal-action">
+					<button class="btn btn-ghost" on:click={clearFailedUninstalls}>
+						🧹 Clear History
+					</button>
+					<button class="btn btn-primary" on:click={closeFailedUninstalls}>
+						Close
 					</button>
 				</div>
 			</div>

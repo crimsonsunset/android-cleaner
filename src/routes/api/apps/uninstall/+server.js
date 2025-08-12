@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { loadCache, saveCache, removeCachedApps } from '$lib/cache.js';
 
 const execAsync = promisify(exec);
 
@@ -71,6 +72,24 @@ export async function POST({ request }) {
 		
 		const successCount = results.filter(r => r.success).length;
 		const failureCount = results.filter(r => !r.success).length;
+		
+		// Update cache - remove successfully uninstalled apps
+		if (successCount > 0) {
+			try {
+				const cache = loadCache();
+				const successfulUninstalls = results
+					.filter(r => r.success)
+					.map(r => r.packageName);
+				
+				if (successfulUninstalls.length > 0) {
+					removeCachedApps(cache, successfulUninstalls);
+					saveCache(cache);
+					logger.info(`Updated cache: removed ${successfulUninstalls.length} uninstalled apps`);
+				}
+			} catch (cacheError) {
+				logger.warn(`Failed to update cache after uninstall: ${cacheError.message}`);
+			}
+		}
 		
 		return json({
 			success: true,
