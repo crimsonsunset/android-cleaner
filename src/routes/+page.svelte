@@ -28,7 +28,8 @@
 		current: 0,
 		total: 0,
 		percentage: 0,
-		cached: 0
+		cached: 0,
+		expectedTotal: 0 // Track expected total for batch processing
 	};
 	
 	// App categories for filtering
@@ -65,7 +66,8 @@
 		
 		loading = true;
 		error = null;
-		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0 };
+		apps = []; // Clear existing apps
+		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0 };
 		
 		try {
 			// Get complete app list with all details in one call
@@ -77,24 +79,38 @@
 				return;
 			}
 			
-			// Set progress to show we're processing
-			loadingProgress.total = data.apps.length;
-			loadingProgress.current = data.apps.length;
-			loadingProgress.percentage = 100;
+			if (data.cached) {
+				// Cached data - instant load
+				loadingProgress.total = data.apps.length;
+				loadingProgress.current = data.apps.length;
+				loadingProgress.percentage = 100;
+				loadingProgress.cached = data.apps.length;
+				
+				apps = data.apps;
+				console.log(`[BULK-CACHE] Loaded ${apps.length} apps instantly from cache`);
+			} else {
+				// Fresh data - was processed in batches
+				loadingProgress.expectedTotal = data.totalUserApps;
+				loadingProgress.total = data.totalUserApps;
+				loadingProgress.current = data.apps.length;
+				loadingProgress.percentage = Math.round((data.apps.length / data.totalUserApps) * 100);
+				
+				apps = data.apps;
+				console.log(`[BATCH-COMPLETE] Processed ${apps.length}/${data.totalUserApps} apps in batches of ${data.batchSize || 5}`);
+			}
 			
-			// Use the complete app data directly (no individual API calls needed!)
-			apps = data.apps;
 			selectedApps.clear();
 			selectedApps = selectedApps; // Trigger reactivity
-			
-			console.log(`[BULK-LOAD] Loaded ${apps.length} apps instantly via bulk API`);
 			
 		} catch (err) {
 			error = 'Network error loading apps';
 			console.error('Load apps failed:', err);
 		} finally {
 			loading = false;
-			loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0 };
+			// Keep progress visible briefly to show completion
+			setTimeout(() => {
+				loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0 };
+			}, 1000);
 		}
 	}
 	
@@ -403,14 +419,31 @@
 						<div>
 							<p class="text-lg font-medium">Loading apps...</p>
 							<p class="text-sm text-base-content/70">
-								Reading app data from Samsung Fold 5
+								{#if loadingProgress.expectedTotal > 0}
+									Processing {loadingProgress.current} of {loadingProgress.expectedTotal} apps
+								{:else}
+									Reading app data from Samsung Fold 5
+								{/if}
 							</p>
 							<p class="text-xs text-base-content/60">
-								⚡ Using bulk loading for instant performance
+								{#if loadingProgress.expectedTotal > 0}
+									🔄 AAPT batch processing ({loadingProgress.percentage}% complete)
+								{:else}
+									⚡ Checking cache or starting fresh scan
+								{/if}
 							</p>
 						</div>
 					</div>
-					<progress class="progress progress-primary w-full max-w-md mx-auto"></progress>
+					{#if loadingProgress.expectedTotal > 0}
+						<progress class="progress progress-primary w-full max-w-md mx-auto" 
+							value={loadingProgress.current} 
+							max={loadingProgress.expectedTotal}></progress>
+						<p class="text-xs text-center mt-2 text-base-content/60">
+							{loadingProgress.current}/{loadingProgress.expectedTotal} apps processed
+						</p>
+					{:else}
+						<progress class="progress progress-primary w-full max-w-md mx-auto"></progress>
+					{/if}
 				</div>
 			</div>
 		{:else if filteredApps.length > 0}
