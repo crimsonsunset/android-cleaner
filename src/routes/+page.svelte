@@ -15,9 +15,10 @@
 	let connectionStatus = null;
 	let loading = false;
 	let searchTerm = '';
-	let selectedCategory = 'all';
 	let hideSystemApps = true; // Default to hiding system apps
 	let error = null;
+	let stopRequested = false; // For halting batch processing
+	let selectedDeviceSerial = null; // Currently selected device (fake for now)
 	
 	// Table sorting
 	let sortColumn = 'displayName';
@@ -32,8 +33,7 @@
 		expectedTotal: 0 // Track expected total for batch processing
 	};
 	
-	// App categories for filtering
-	const categories = ['all', 'Social', 'Games', 'Entertainment', 'Finance', 'Productivity', 'Photo', 'Other'];
+	// No categories - removed per user request
 	
 	/**
 	 * Check ADB connection status on component mount
@@ -49,10 +49,24 @@
 		try {
 			const response = await fetch('/api/adb/status');
 			connectionStatus = await response.json();
+			
+			// Set default selected device (smart selection logic)
+			if (connectionStatus?.deviceConnected && !selectedDeviceSerial) {
+				selectedDeviceSerial = connectionStatus.targetDevice;
+			}
 		} catch (err) {
 			error = 'Failed to check ADB connection';
 			console.error('Connection check failed:', err);
 		}
+	}
+	
+	/**
+	 * Switch to a different connected device (UI only for now)
+	 */
+	function switchDevice(deviceSerial) {
+		selectedDeviceSerial = deviceSerial;
+		console.log(`[DEVICE-SWITCH] Selected device: ${deviceSerial} (UI only - not wired up yet)`);
+		// TODO: Implement actual device switching in backend
 	}
 	
 	/**
@@ -66,11 +80,12 @@
 		
 		loading = true;
 		error = null;
+		stopRequested = false;
 		apps = []; // Clear existing apps
 		loadingProgress = { current: 0, total: 0, percentage: 0, cached: 0, expectedTotal: 0 };
 		
 		try {
-			// Get complete app list with all details in one call
+			// Get app list or cached data
 			const response = await fetch('/api/apps/list');
 			const data = await response.json();
 			
@@ -88,15 +103,13 @@
 				
 				apps = data.apps;
 				console.log(`[BULK-CACHE] Loaded ${apps.length} apps instantly from cache`);
+			} else if (data.requiresBatching) {
+				// Fresh data - process in frontend-controlled batches
+				await processBatchesWithProgress(data.packageList, data.deviceSerial, data.totalUserApps);
 			} else {
-				// Fresh data - was processed in batches
-				loadingProgress.expectedTotal = data.totalUserApps;
-				loadingProgress.total = data.totalUserApps;
-				loadingProgress.current = data.apps.length;
-				loadingProgress.percentage = Math.round((data.apps.length / data.totalUserApps) * 100);
-				
+				// Fallback: data already processed
 				apps = data.apps;
-				console.log(`[BATCH-COMPLETE] Processed ${apps.length}/${data.totalUserApps} apps in batches of ${data.batchSize || 5}`);
+				console.log(`[FALLBACK] Received ${apps.length} apps`);
 			}
 			
 			selectedApps.clear();
@@ -114,6 +127,86 @@
 		}
 	}
 	
+	/**
+	 * Process app batches with real-time progress updates
+	 */
+	async function processBatchesWithProgress(packageList, deviceSerial, totalApps) {
+		const BATCH_SIZE = 5;
+		const totalBatches = Math.ceil(packageList.length / BATCH_SIZE);
+		
+		// Initialize progress tracking
+		loadingProgress.expectedTotal = totalApps;
+		loadingProgress.total = totalApps;
+		loadingProgress.current = 0;
+		loadingProgress.percentage = 0;
+		
+		console.log(`[BATCH-START] Processing ${totalApps} apps in ${totalBatches} batches of ${BATCH_SIZE}`);
+		
+		for (let i = 0; i < packageList.length; i += BATCH_SIZE) {
+			// Check if stop was requested
+			if (stopRequested) {
+				console.log(`[BATCH-STOPPED] Processing halted at ${apps.length}/${totalApps} apps`);
+				break;
+			}
+			
+			const batch = packageList.slice(i, i + BATCH_SIZE);
+			const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+			
+			try {
+				const batchResponse = await fetch('/api/apps/list-batch', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						packageNames: batch,
+						deviceSerial,
+						batchNumber,
+						totalBatches
+					})
+				});
+				
+				const batchData = await batchResponse.json();
+				
+				if (batchData.success) {
+					// Add new apps to the list
+					apps = [...apps, ...batchData.apps];
+					
+					// Update progress
+					loadingProgress.current = apps.length;
+					loadingProgress.percentage = Math.round((apps.length / totalApps) * 100);
+					
+					console.log(`[BATCH-${batchNumber}] Completed: ${apps.length}/${totalApps} apps (${loadingProgress.percentage}%)`);
+					
+					// Force reactivity update
+					apps = apps;
+				} else {
+					console.error(`[BATCH-${batchNumber}] Failed:`, batchData.error);
+				}
+			} catch (batchError) {
+				console.error(`[BATCH-${batchNumber}] Network error:`, batchError);
+			}
+		}
+		
+		// Save to cache after all batches complete
+		try {
+			const cacheResponse = await fetch('/api/cache/save', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					deviceSerial,
+					apps: apps
+				})
+			});
+			const cacheData = await cacheResponse.json();
+			if (cacheData.success) {
+				console.log(`[BATCH-COMPLETE] Cached ${apps.length} apps for future loads`);
+			}
+		} catch (cacheError) {
+			console.warn('[BATCH-COMPLETE] Failed to cache results:', cacheError);
+		}
+		
+		console.log(`[BATCH-COMPLETE] Processed ${apps.length} apps total`);
+	}
+
 	/**
 	 * Uninstall selected apps
 	 */
@@ -234,15 +327,14 @@
 	}
 
 	/**
-	 * Filter and sort apps based on search, category, and sort settings
+	 * Filter and sort apps based on search and system filter only
 	 */
 	$: filteredApps = apps
 		.filter(app => {
 			const matchesSearch = app.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
 			                     app.packageName.toLowerCase().includes(searchTerm.toLowerCase());
-			const matchesCategory = selectedCategory === 'all' || app.category === selectedCategory;
 			const matchesSystemFilter = !hideSystemApps || app.type !== 'system';
-			return matchesSearch && matchesCategory && matchesSystemFilter;
+			return matchesSearch && matchesSystemFilter;
 		})
 		.sort((a, b) => {
 			let aVal = a[sortColumn];
@@ -264,16 +356,12 @@
 	$: selectAll = filteredApps.length > 0 && filteredApps.every(app => selectedApps.has(app.packageName));
 	
 	/**
-	 * Get category counts for filter buttons
+	 * Stop batch processing
 	 */
-	$: categoryCounts = categories.reduce((counts, category) => {
-		if (category === 'all') {
-			counts[category] = apps.length;
-		} else {
-			counts[category] = apps.filter(app => app.category === category).length;
-		}
-		return counts;
-	}, {});
+	function stopBatchProcessing() {
+		stopRequested = true;
+		console.log('[BATCH-STOP] Stop requested by user');
+	}
 </script>
 
 <svelte:head>
@@ -351,20 +439,7 @@
 						/>
 					</div>
 					
-					<!-- Category Filter -->
-					<div class="flex flex-wrap gap-2">
-						{#each categories as category}
-							<button 
-								class="btn btn-sm {selectedCategory === category ? 'btn-primary' : 'btn-outline'}"
-								on:click={() => selectedCategory = category}
-							>
-								{category} 
-								{#if categoryCounts[category]}
-									<span class="badge badge-secondary">{categoryCounts[category]}</span>
-								{/if}
-							</button>
-						{/each}
-					</div>
+					<!-- No category filters - removed per user request -->
 					
 					<!-- System Apps Toggle -->
 					<div class="form-control">
@@ -418,13 +493,23 @@
 						<span class="loading loading-spinner loading-lg text-primary"></span>
 						<div>
 							<p class="text-lg font-medium">Loading apps...</p>
-							<p class="text-sm text-base-content/70">
+							<div class="flex items-center gap-4">
+								<p class="text-sm text-base-content/70">
+									{#if loadingProgress.expectedTotal > 0}
+										{loadingProgress.current}/{loadingProgress.expectedTotal} apps processed
+									{:else}
+										Reading app data from Samsung Fold 5
+									{/if}
+								</p>
 								{#if loadingProgress.expectedTotal > 0}
-									Processing {loadingProgress.current} of {loadingProgress.expectedTotal} apps
-								{:else}
-									Reading app data from Samsung Fold 5
+									<button 
+										class="btn btn-sm btn-error"
+										on:click={stopBatchProcessing}
+									>
+										⏹️ Stop
+									</button>
 								{/if}
-							</p>
+							</div>
 							<p class="text-xs text-base-content/60">
 								{#if loadingProgress.expectedTotal > 0}
 									🔄 AAPT batch processing ({loadingProgress.percentage}% complete)
@@ -447,7 +532,7 @@
 				</div>
 			</div>
 		{:else if filteredApps.length > 0}
-			<div class="overflow-x-auto">
+			<div class="overflow-x-auto {loading ? 'pointer-events-none opacity-75' : ''}">
 				<table class="table table-zebra table-hover">
 					<thead>
 						<tr>
@@ -486,12 +571,7 @@
 									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
 								{/if}
 							</th>
-							<th class="cursor-pointer hover:bg-base-200" on:click={() => sortBy('category')}>
-								Category
-								{#if sortColumn === 'category'}
-									<span class="text-xs ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-								{/if}
-							</th>
+							<!-- Category column removed -->
 							<th>Actions</th>
 						</tr>
 					</thead>
@@ -515,9 +595,6 @@
 								</td>
 								<td class="text-sm">{app.size}</td>
 								<td class="text-sm">{app.installDate}</td>
-								<td>
-									<div class="badge badge-outline badge-sm">{app.category}</div>
-								</td>
 								<td>
 									<button 
 										class="btn btn-xs btn-error"
@@ -563,9 +640,9 @@
 				<div class="hero-content text-center">
 					<div class="max-w-md">
 						<h2 class="text-2xl font-bold">🔍 No Apps Found</h2>
-						<p class="py-6">No apps match your current search and filter criteria.</p>
-						<button class="btn btn-outline" on:click={() => {searchTerm = ''; selectedCategory = 'all'; hideSystemApps = true;}}>
-							Clear Filters
+						<p class="py-6">No apps match your current search criteria.</p>
+						<button class="btn btn-outline" on:click={() => {searchTerm = ''; hideSystemApps = true;}}>
+							Clear Search
 						</button>
 					</div>
 				</div>

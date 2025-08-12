@@ -168,7 +168,6 @@ async function getAppDetails(deviceSerial, packageName) {
 			lastUpdate,
 			versionName: versionNameMatch ? versionNameMatch[1] : 'Unknown',
 			versionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : 0,
-			category: getAppCategory(packageName),
 			detailsFetched: true
 		};
 		
@@ -185,59 +184,10 @@ async function getAppDetails(deviceSerial, packageName) {
 			lastUpdate: 'Unknown',
 			versionName: 'Unknown',
 			versionCode: 0,
-			category: 'Other',
 			error: error.message,
 			detailsFetched: false
 		};
 	}
 }
 
-/**
- * Categorize app based on package name patterns
- * @param {string} packageName - Android package name
- * @returns {string} App category
- */
-function getAppCategory(packageName) {
-	const name = packageName.toLowerCase();
-	
-	// Social apps
-	if (name.includes('social') || name.includes('facebook') || name.includes('instagram') || 
-		name.includes('twitter') || name.includes('discord') || name.includes('slack') ||
-		name.includes('whatsapp') || name.includes('telegram') || name.includes('snapchat')) {
-		return 'Social';
-	}
-	
-	// Games
-	if (name.includes('game') || name.includes('play') || name.includes('arcade') ||
-		name.includes('puzzle') || name.includes('casino') || name.includes('racing')) {
-		return 'Games';
-	}
-	
-	// Entertainment
-	if (name.includes('music') || name.includes('spotify') || name.includes('youtube') ||
-		name.includes('netflix') || name.includes('video') || name.includes('media') ||
-		name.includes('stream') || name.includes('podcast')) {
-		return 'Entertainment';
-	}
-	
-	// Finance
-	if (name.includes('bank') || name.includes('pay') || name.includes('wallet') ||
-		name.includes('finance') || name.includes('invest') || name.includes('credit')) {
-		return 'Finance';
-	}
-	
-	// Productivity
-	if (name.includes('office') || name.includes('docs') || name.includes('pdf') ||
-		name.includes('note') || name.includes('calendar') || name.includes('email') ||
-		name.includes('microsoft') || name.includes('google')) {
-		return 'Productivity';
-	}
-	
-	// Photo & Camera
-	if (name.includes('camera') || name.includes('photo') || name.includes('gallery') ||
-		name.includes('image') || name.includes('edit')) {
-		return 'Photo';
-	}
-	
-	return 'Other';
-}
+// Category logic removed per user request
