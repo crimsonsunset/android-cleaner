@@ -259,10 +259,76 @@ android-cleaner-linux         (~60MB) - Single file, zero dependencies
 ```
 **No external folders required** - All assets and tools embedded in executable.
 
-### Phase 7: Migration Integration 🔮 **PREMATURE - WAIT FOR SOLID FOUNDATION**
+### Phase 6.5: Core Feature Enhancements 🚀 **NEXT AFTER DISTRIBUTION**
+**Goal:** Enhance core functionality with high-value user features
+
+**Prerequisites:** Phase 6 (Distribution) must be complete with stable architecture.
+
+#### UI & Experience Improvements ⚡ **HIGH PRIORITY** - Estimated: 3-5 days
+- [ ] **Table Pagination Query Params** - URL state management for pagination/filtering
+  - [ ] Preserve page, pageSize, search, sort in URL (`/?page=2&pageSize=50&search=games&sort=size&direction=desc`)
+  - [ ] Shareable/bookmarkable table states
+  - [ ] Browser back/forward navigation support
+  - [ ] Implementation: SvelteKit `$page` store with reactive URL updates
+- [ ] **Storage Breakdown Enhancement** - Extend current storage display
+  - [ ] Cache vs App Data separation with individual clear buttons
+  - [ ] Visual storage bars (cache/data/APK breakdown per app)
+  - [ ] Bulk cache clearing operations (`adb shell pm clear-cache ${packageName}`)
+  - [ ] Implementation: Extend dumpsys parsing to separate cache/data sizes
+- [ ] **Improved Bulk Operations** - Enhance selection and batch processing
+  - [ ] Select by criteria (unused apps, large apps, old apps)
+  - [ ] Bulk operations progress tracking per operation type
+
+#### Storage Analysis Features 📊 **HIGH PRIORITY** - Estimated: 5-7 days  
+- [ ] **Visual Disk Inventory Page** - DiskInventory X style visualization
+  - [ ] New route `/storage` with treemap/sunburst visualization (D3.js)
+  - [ ] Interactive drill-down by app category, size, type
+  - [ ] Click to select apps for removal from visualization
+  - [ ] Export storage analysis reports
+  - [ ] Implementation: Hierarchical storage data structure with interactive visualization
+- [ ] **Enhanced Storage Intelligence** - Deeper storage insights
+  - [ ] Identify large cache files, old downloads, duplicate files
+  - [ ] Storage recommendations based on usage patterns
+  - [ ] Before/after storage impact predictions
+
+### Phase 7: Advanced Analysis & Intelligence 🔍 **MEDIUM PRIORITY**
+**Goal:** Provide sophisticated app analysis and insights for power users
+
+#### App Intelligence Features 📱 **MEDIUM PRIORITY** - Estimated: 7-10 days
+- [ ] **Usage Analytics Dashboard** - Comprehensive app usage insights
+  - [ ] New route `/analytics` with usage patterns over time
+  - [ ] Last used, frequency, session duration analysis via `dumpsys usagestats`
+  - [ ] Usage-based cleanup recommendations
+  - [ ] Identify truly unused vs occasionally used apps
+- [ ] **Permission Audit System** - Security and privacy analysis
+  - [ ] New route `/permissions` with comprehensive permission overview
+  - [ ] Dangerous permission highlighting and explanations
+  - [ ] Permission timeline (when apps gained new permissions)
+  - [ ] Privacy risk scoring for apps
+  - [ ] Implementation: Parse app manifests + current runtime permissions
+- [ ] **Battery Impact Analysis** - Performance-focused insights
+  - [ ] Battery usage by app (via `dumpsys batterystats`)
+  - [ ] Background activity monitoring
+  - [ ] Power-hungry app identification
+  - [ ] Battery optimization recommendations
+
+#### Technical Deep-Dive Tools 🛠️ **POWER USER FEATURES** - Estimated: 5-7 days
+- [ ] **Package Inspector** - Detailed technical app analysis
+  - [ ] New route `/inspector/{packageName}` for deep app analysis
+  - [ ] Manifest analysis, permissions, components, services
+  - [ ] APK structure and resource analysis via AAPT
+  - [ ] Signing certificate information
+  - [ ] Implementation: Comprehensive AAPT parsing + manifest extraction
+- [ ] **Bulk APK Extraction** - Backup and archival features
+  - [ ] Extract APKs before uninstall with progress tracking (`adb pull` operations)
+  - [ ] Organized APK storage with metadata
+  - [ ] APK management and re-installation capabilities
+  - [ ] Version history tracking for extracted APKs
+
+### Phase 8: Migration Integration 🔮 **FUTURE - WAIT FOR SOLID FOUNDATION**
 **Goal:** Direct integration with Samsung Smart Switch migration workflow
 
-**Status:** Deprioritized until Phase 6 distribution is actually complete. Building advanced features on unstable architecture is counterproductive.
+**Status:** Implement only after Phases 6.5 and 7 are complete and stable.
 
 #### Pre-Migration Analysis (FUTURE)
 - [ ] **Transfer Baggage Calculator** - Estimate what will transfer with apps
@@ -408,3 +474,44 @@ The Android Cleaner app is **functionally complete** for cleaning your Samsung F
 **Distribution Strategy Revised:** Initial Bun compile approach discovered to have fundamental multi-file dependency issues. Asset embedding solution required for true single-file executable distribution.
 
 **Last Updated:** August 12, 2025 - **ARCHITECTURE REALITY CHECK COMPLETE - REFACTORING PHASE PLANNED!** 🔧
+
+---
+
+## 📋 **Feature Implementation Notes**
+
+### **Technical Implementation Strategy**
+The roadmap now includes specific technical details for implementation:
+
+#### **Storage Features (Phase 6.5)**
+```javascript
+// Storage breakdown - extend existing dumpsys parsing
+const appData = {
+  cacheSize: '12.1MB',    // NEW: pm dump to get cache size
+  dataSize: '33.1MB',     // NEW: separate data from total
+  apkSize: '8.7MB'        // EXISTING
+};
+
+// Visual inventory - new D3.js treemap page
+// Route: /storage with interactive drill-down
+const storageData = {
+  name: "Device Storage",
+  children: [
+    { name: "Apps", size: 2500, children: [...apps] },
+    { name: "Photos", size: 1200 },
+    { name: "Downloads", size: 800 }
+  ]
+};
+```
+
+#### **Advanced Analysis (Phase 7)**
+```javascript
+// New specialized analysis routes
+/analytics - dumpsys usagestats parsing for usage patterns
+/permissions - manifest analysis + runtime permissions  
+/inspector/{package} - comprehensive AAPT-based technical details
+```
+
+### **Development Priorities**
+1. **Architecture cleanup first** (Phase 5.5) - foundation for all features
+2. **Visual/UX wins** (Phase 6.5) - immediate user value and engagement
+3. **Power user depth** (Phase 7) - differentiation and comprehensive functionality
